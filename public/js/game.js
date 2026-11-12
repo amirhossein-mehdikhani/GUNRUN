@@ -110,6 +110,7 @@ class GameApp {
     // Lobby Inputs & Selectors
     this.nicknameInput = document.getElementById('player-nickname');
     this.roomNameInput = document.getElementById('room-name');
+    this.gameModeSelect = document.getElementById('game-mode-select');
     this.gravitySelect = document.getElementById('gravity-select');
     this.scoreLimitSelect = document.getElementById('score-limit-select');
     this.btnCreateRoom = document.getElementById('btn-create-room');
@@ -139,6 +140,15 @@ class GameApp {
     // Waiting Room UI
     this.waitingRoomTitle = document.getElementById('waiting-room-title');
     this.waitingPlayerList = document.getElementById('waiting-player-list');
+    this.waitingFfaContainer = document.getElementById('waiting-ffa-container');
+    this.waitingTeamsContainer = document.getElementById('waiting-teams-container');
+    this.waitingBlueList = document.getElementById('waiting-blue-list');
+    this.waitingRedList = document.getElementById('waiting-red-list');
+    this.blueCountBadge = document.getElementById('blue-count');
+    this.redCountBadge = document.getElementById('red-count');
+    this.btnJoinBlue = document.getElementById('btn-join-blue');
+    this.btnJoinRed = document.getElementById('btn-join-red');
+    this.waitingHostModeSelect = document.getElementById('waiting-host-mode-select');
     this.waitingSettingsSummary = document.getElementById('waiting-settings-summary');
     this.btnStartMatch = document.getElementById('btn-start-match');
     this.btnLeaveRoom = document.getElementById('btn-leave-room');
@@ -168,6 +178,7 @@ class GameApp {
 
     // Match End Elements
     this.winnerTitle = document.getElementById('winner-title');
+    this.matchEndTeamScores = document.getElementById('match-end-team-scores');
     this.mvpName = document.getElementById('mvp-name');
     this.mvpStat = document.getElementById('mvp-stat');
     this.finalScoreboardBody = document.getElementById('final-scoreboard-body');
@@ -516,7 +527,7 @@ class GameApp {
     this.selectMap(this.selectedMap || 'dust2');
     this.selectCharacter(this.selectedCharacter || 'soldier');
 
-    // Host Map Selector in Waiting Room
+    // Host Map & Mode Selectors in Waiting Room
     this.waitingMapCards.forEach((card) => {
       card.addEventListener('click', () => {
         if (this.currentRoom && this.currentRoom.hostId === this.localPlayerId) {
@@ -528,6 +539,28 @@ class GameApp {
         }
       });
     });
+
+    if (this.waitingHostModeSelect) {
+      this.waitingHostModeSelect.addEventListener('change', () => {
+        if (this.currentRoom && this.currentRoom.hostId === this.localPlayerId) {
+          this.socket.emit('update-room-settings', {
+            settings: { gameMode: this.waitingHostModeSelect.value }
+          });
+        }
+      });
+    }
+
+    if (this.btnJoinBlue) {
+      this.btnJoinBlue.addEventListener('click', () => {
+        this.socket.emit('switch-team', { team: 'blue' });
+      });
+    }
+
+    if (this.btnJoinRed) {
+      this.btnJoinRed.addEventListener('click', () => {
+        this.socket.emit('switch-team', { team: 'red' });
+      });
+    }
 
     // Weapon Loadout Hotbar Clicks
     this.loadoutSlots.forEach(slot => {
@@ -542,6 +575,7 @@ class GameApp {
     this.btnCreateRoom.addEventListener('click', () => {
       const roomName = this.roomNameInput.value.trim() || 'Tactical Dust';
       const playerName = this.nicknameInput.value.trim() || 'Soldier';
+      const gameMode = this.gameModeSelect ? this.gameModeSelect.value : 'ffa';
       const gravity = this.gravitySelect.value;
       const scoreLimit = Number(this.scoreLimitSelect.value) || 15;
 
@@ -552,6 +586,7 @@ class GameApp {
         characterType: this.selectedCharacter,
         settings: {
           mapId: this.selectedMap,
+          gameMode,
           gravity,
           scoreLimit
         }
@@ -802,6 +837,23 @@ class GameApp {
       alert(msg);
     });
 
+    this.socket.on('team-switch-error', (msg) => {
+      alert(msg);
+    });
+
+    this.socket.on('room-updated', ({ room }) => {
+      if (!room) return;
+      this.currentRoom = room;
+      if (this.waitingHostModeSelect) {
+        this.waitingHostModeSelect.value = room.settings?.gameMode || 'ffa';
+      }
+      this.waitingMapCards.forEach(c => {
+        c.classList.toggle('selected', c.dataset.map === (room.settings?.mapId || 'dust2'));
+      });
+      this.updateWaitingSettingsSummary();
+      this.updateWaitingPlayerList();
+    });
+
     this.socket.on('player-joined-room', (player) => {
       if (!this.currentRoom) return;
       this.currentRoom.players[player.id] = player;
@@ -884,7 +936,29 @@ class GameApp {
       this.matchEndModal.classList.remove('hidden');
       this.matchEndModal.classList.add('active');
 
-      this.winnerTitle.textContent = `${data.winnerName.toUpperCase()} WINS!`;
+      if (data.gameMode === 'tdm') {
+        if (data.winningTeam === 'draw') {
+          this.winnerTitle.textContent = 'DRAW MATCH!';
+          this.winnerTitle.style.color = '#fbbf24';
+        } else if (data.winningTeam === 'blue') {
+          this.winnerTitle.textContent = '🔵 TEAM BLUE WINS!';
+          this.winnerTitle.style.color = '#60a5fa';
+        } else {
+          this.winnerTitle.textContent = '🔴 TEAM RED WINS!';
+          this.winnerTitle.style.color = '#f87171';
+        }
+
+        if (this.matchEndTeamScores && data.teamScores) {
+          this.matchEndTeamScores.classList.remove('hidden');
+          this.matchEndTeamScores.innerHTML = `<span style="color:#60a5fa;">BLUE ${data.teamScores.blue}</span> <span style="color:#64748b;">—</span> <span style="color:#f87171;">${data.teamScores.red} RED</span>`;
+        }
+      } else {
+        this.winnerTitle.textContent = `${data.winnerName.toUpperCase()} WINS!`;
+        this.winnerTitle.style.color = '#ffffff';
+        if (this.matchEndTeamScores) {
+          this.matchEndTeamScores.classList.add('hidden');
+        }
+      }
 
       if (data.mvp) {
         this.mvpName.textContent = data.mvp.name;
@@ -998,10 +1072,15 @@ class GameApp {
     });
 
     this.socket.on('player-killed', (data) => {
-      const { killerId, killerName, victimId, victimName, weaponName, isHeadshot, scoreboard } = data;
+      const { killerId, killerName, killerTeam, victimId, victimName, victimTeam, weaponName, isHeadshot, teamScores, scoreboard } = data;
+      if (this.currentRoom && teamScores) {
+        this.currentRoom.teamScores = teamScores;
+      }
       const headshotBadge = isHeadshot ? ' 💥 HEADSHOT!' : '';
       const wpn = weaponName || '🔫';
-      this.addFeedItem(`${killerName} [${wpn}] ${victimName}${headshotBadge}`);
+      const kPrefix = killerTeam === 'blue' ? '🔵 ' : (killerTeam === 'red' ? '🔴 ' : '');
+      const vPrefix = victimTeam === 'blue' ? '🔵 ' : (victimTeam === 'red' ? '🔴 ' : '');
+      this.addFeedItem(`${kPrefix}${killerName} [${wpn}] ${vPrefix}${victimName}${headshotBadge}`);
       this.updateScoreboardTable(scoreboard);
 
       if (victimId === this.localPlayerId) {
@@ -1052,10 +1131,14 @@ class GameApp {
 
       const mapNames = { dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
       const displayMap = mapNames[r.mapId] || 'Dust II';
+      const isTdm = r.gameMode === 'tdm';
+      const modeBadge = isTdm
+        ? `<span class="team-badge blue">2 TEAMS 5v5</span> <span style="font-size:11px;color:#94a3b8;">(🔵 ${r.teamCounts?.blue ?? 0} vs ${r.teamCounts?.red ?? 0} 🔴)</span>`
+        : `<span class="team-badge ffa">FFA SOLO</span>`;
 
       card.innerHTML = `
         <div class="room-info">
-          <div class="room-info-title">${r.name}</div>
+          <div class="room-info-title">${r.name} ${modeBadge}</div>
           <div class="room-info-meta">
             <span>Map: <b>${displayMap}</b></span>
             <span>Host: <b>${r.hostName}</b></span>
@@ -1089,6 +1172,9 @@ class GameApp {
     this.screenWaiting.classList.remove('hidden');
 
     this.waitingRoomTitle.textContent = room.name;
+    if (this.waitingHostModeSelect) {
+      this.waitingHostModeSelect.value = room.settings?.gameMode || 'ffa';
+    }
     this.updateWaitingSettingsSummary();
     this.updateWaitingPlayerList();
 
@@ -1112,30 +1198,79 @@ class GameApp {
     const s = this.currentRoom.settings;
     const mapNames = { dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
     const mName = mapNames[s.mapId] || 'Dust II';
-    this.waitingSettingsSummary.textContent = `Map: ${mName.toUpperCase()} | Gravity: ${s.gravity.toUpperCase()} | Score Limit: ${s.scoreLimit} Kills`;
+    const modeLabel = s.gameMode === 'tdm' ? '2 TEAMS (MAX 5/TEAM)' : 'FREE-FOR-ALL';
+    this.waitingSettingsSummary.textContent = `Mode: ${modeLabel} | Map: ${mName.toUpperCase()} | Gravity: ${s.gravity.toUpperCase()} | Limit: ${s.scoreLimit} Kills`;
+  }
+
+  renderPlayerEntryHtml(p, charIcons) {
+    const cIcon = charIcons[p.characterType] || '🎖️';
+    const dotColor = this.currentRoom.settings?.gameMode === 'tdm'
+      ? (p.team === 'red' ? '#ef4444' : '#3b82f6')
+      : p.color;
+    return `
+      <div class="player-entry-left">
+        <div class="player-color-dot" style="background:${dotColor}"></div>
+        <span style="font-size: 16px;">${cIcon}</span>
+        <span class="player-name-text">${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</span>
+      </div>
+      <div>
+        ${p.id === this.currentRoom.hostId ? '<span class="host-tag">HOST</span>' : ''}
+      </div>
+    `;
   }
 
   updateWaitingPlayerList() {
     if (!this.currentRoom) return;
-    this.waitingPlayerList.innerHTML = '';
     const players = Object.values(this.currentRoom.players);
-
     const charIcons = { soldier: '🎖️', robot: '🤖', cyborg: '🦾', heavy: '🛡️' };
+    const isTdm = this.currentRoom.settings?.gameMode === 'tdm';
 
+    if (this.waitingFfaContainer && this.waitingTeamsContainer) {
+      this.waitingFfaContainer.classList.toggle('hidden', isTdm);
+      this.waitingTeamsContainer.classList.toggle('hidden', !isTdm);
+    }
+
+    if (isTdm && this.waitingBlueList && this.waitingRedList) {
+      this.waitingBlueList.innerHTML = '';
+      this.waitingRedList.innerHTML = '';
+
+      const bluePlayers = players.filter(p => p.team !== 'red');
+      const redPlayers = players.filter(p => p.team === 'red');
+
+      bluePlayers.forEach(p => {
+        const entry = document.createElement('div');
+        entry.className = 'player-entry';
+        entry.innerHTML = this.renderPlayerEntryHtml(p, charIcons);
+        this.waitingBlueList.appendChild(entry);
+      });
+
+      redPlayers.forEach(p => {
+        const entry = document.createElement('div');
+        entry.className = 'player-entry';
+        entry.innerHTML = this.renderPlayerEntryHtml(p, charIcons);
+        this.waitingRedList.appendChild(entry);
+      });
+
+      if (this.blueCountBadge) this.blueCountBadge.textContent = bluePlayers.length;
+      if (this.redCountBadge) this.redCountBadge.textContent = redPlayers.length;
+
+      const myTeam = this.currentRoom.players[this.localPlayerId]?.team;
+      if (this.btnJoinBlue) {
+        this.btnJoinBlue.disabled = (myTeam === 'blue' || bluePlayers.length >= 5);
+        this.btnJoinBlue.textContent = myTeam === 'blue' ? 'ON BLUE' : (bluePlayers.length >= 5 ? 'FULL (5/5)' : 'JOIN BLUE');
+      }
+      if (this.btnJoinRed) {
+        this.btnJoinRed.disabled = (myTeam === 'red' || redPlayers.length >= 5);
+        this.btnJoinRed.textContent = myTeam === 'red' ? 'ON RED' : (redPlayers.length >= 5 ? 'FULL (5/5)' : 'JOIN RED');
+      }
+      return;
+    }
+
+    this.waitingPlayerList.innerHTML = '';
     players.forEach((p) => {
       const entry = document.createElement('div');
       entry.className = 'player-entry';
-      const cIcon = charIcons[p.characterType] || '🎖️';
-      entry.innerHTML = `
-        <div class="player-entry-left">
-          <div class="player-color-dot" style="background:${p.color}"></div>
-          <span style="font-size: 16px;">${cIcon}</span>
-          <span class="player-name-text">${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</span>
-        </div>
-        <div>
-          ${p.id === this.currentRoom.hostId ? '<span class="host-tag">HOST</span>' : ''}
-        </div>
-      `;
+      entry.innerHTML = this.renderPlayerEntryHtml(p, charIcons);
       this.waitingPlayerList.appendChild(entry);
     });
   }
@@ -1232,14 +1367,32 @@ class GameApp {
     // Default to Slot 1 (Assault Rifle)
     this.switchWeaponSlot(1);
 
-    // 4. Instantiate remote characters
+    // 4. Instantiate remote characters & initialize HUD score
     this.remotePlayers.forEach(p => p.destroy());
     this.remotePlayers.clear();
     if (this.projectiles) this.projectiles.clear();
 
+    const isTdm = this.currentRoom?.settings?.gameMode === 'tdm';
+    const myTeam = myData?.team || null;
+
+    if (this.hudMatchScore) {
+      const limit = this.currentRoom?.settings?.scoreLimit || 15;
+      if (isTdm) {
+        const blue = this.currentRoom?.teamScores?.blue || 0;
+        const red = this.currentRoom?.teamScores?.red || 0;
+        this.hudMatchScore.innerHTML = `<span style="color:#60a5fa;">🔵 BLUE ${blue}</span> <span style="color:#64748b;">—</span> <span style="color:#f87171;">${red} RED 🔴</span> <span style="font-size:11px;color:#94a3b8;">(Goal: ${limit})</span>`;
+      } else {
+        this.hudMatchScore.textContent = `LEADER: — (0/${limit})`;
+      }
+    }
+
     for (const [pid, p] of Object.entries(this.currentRoom.players)) {
       if (pid !== this.localPlayerId) {
-        const remote = new RemotePlayer(this.scene, p);
+        const remote = new RemotePlayer(this.scene, {
+          ...p,
+          team: isTdm ? p.team : null,
+          isTeammate: isTdm && myTeam && p.team === myTeam
+        });
         this.remotePlayers.set(pid, remote);
       }
     }
@@ -1282,20 +1435,27 @@ class GameApp {
       hitPoint.copy(hit.point);
 
       if (hit.object.userData && hit.object.userData.playerId) {
-        hitPlayerId = hit.object.userData.playerId;
-        isHeadshot = !!hit.object.userData.isHead;
+        const candidateId = hit.object.userData.playerId;
+        const isTdm = this.currentRoom?.settings?.gameMode === 'tdm';
+        const myTeam = this.currentRoom?.players?.[this.localPlayerId]?.team;
+        const remote = this.remotePlayers.get(candidateId);
+        const isTeammate = isTdm && myTeam && remote?.team === myTeam;
 
-        // Check Knife Backstab angle
-        if (this.weapon.config.isMelee) {
-          const remote = this.remotePlayers.get(hitPlayerId);
-          if (remote) {
-            const victimLook = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), remote.group.rotation.y);
-            isBackstab = (dir.dot(victimLook) > 0.5);
+        if (!isTeammate) {
+          hitPlayerId = candidateId;
+          isHeadshot = !!hit.object.userData.isHead;
+
+          // Check Knife Backstab angle
+          if (this.weapon.config.isMelee) {
+            if (remote) {
+              const victimLook = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), remote.group.rotation.y);
+              isBackstab = (dir.dot(victimLook) > 0.5);
+            }
+            SoundEffects.playKnifeHit();
           }
-          SoundEffects.playKnifeHit();
-        }
 
-        this.triggerHitmarker(isHeadshot || isBackstab);
+          this.triggerHitmarker(isHeadshot || isBackstab);
+        }
       }
     }
 
@@ -1412,6 +1572,13 @@ class GameApp {
     }, 4500);
   }
 
+  formatTeamTag(team) {
+    if (this.currentRoom?.settings?.gameMode !== 'tdm' || !team) return '';
+    return team === 'red'
+      ? '<span class="team-badge red" style="margin-right:6px;">RED</span>'
+      : '<span class="team-badge blue" style="margin-right:6px;">BLUE</span>';
+  }
+
   updateScoreboardTable(scoreboard) {
     if (!scoreboard) return;
     this.scoreboardBody.innerHTML = '';
@@ -1423,8 +1590,9 @@ class GameApp {
       const tr = document.createElement('tr');
       if (p.id === this.localPlayerId) tr.className = 'current-user';
       const cLabel = charIcons[p.characterType] || '🎖️ Soldier';
+      const teamTag = this.formatTeamTag(p.team);
       tr.innerHTML = `
-        <td>${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</td>
+        <td>${teamTag}${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</td>
         <td style="color:#94a3b8;font-size:12px;">${cLabel}</td>
         <td style="color:#00f0ff;font-weight:700">${p.kills}</td>
         <td>${p.deaths}</td>
@@ -1433,10 +1601,16 @@ class GameApp {
       this.scoreboardBody.appendChild(tr);
     });
 
-    if (scoreboard.length > 0 && this.hudMatchScore) {
-      const leader = scoreboard[0];
+    if (this.hudMatchScore) {
       const limit = this.currentRoom?.settings?.scoreLimit || 15;
-      this.hudMatchScore.textContent = `LEADER: ${leader.name} (${leader.kills}/${limit})`;
+      if (this.currentRoom?.settings?.gameMode === 'tdm') {
+        const blue = this.currentRoom?.teamScores?.blue || 0;
+        const red = this.currentRoom?.teamScores?.red || 0;
+        this.hudMatchScore.innerHTML = `<span style="color:#60a5fa;">🔵 BLUE ${blue}</span> <span style="color:#64748b;">—</span> <span style="color:#f87171;">${red} RED 🔴</span> <span style="font-size:11px;color:#94a3b8;">(Goal: ${limit})</span>`;
+      } else if (scoreboard.length > 0) {
+        const leader = scoreboard[0];
+        this.hudMatchScore.textContent = `LEADER: ${leader.name} (${leader.kills}/${limit})`;
+      }
     }
   }
 
@@ -1452,10 +1626,11 @@ class GameApp {
 
       const rankBadge = p.rank === 1 ? '🥇 #1' : (p.rank === 2 ? '🥈 #2' : (p.rank === 3 ? '🥉 #3' : `#${p.rank}`));
       const cLabel = charIcons[p.characterType] || '🎖️ Soldier';
+      const teamTag = this.formatTeamTag(p.team);
 
       tr.innerHTML = `
         <td style="font-weight:800; color:${p.rank === 1 ? '#fbbf24' : '#fff'};">${rankBadge}</td>
-        <td style="font-weight:700;">${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</td>
+        <td style="font-weight:700;">${teamTag}${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</td>
         <td style="color:#94a3b8;font-size:12px;">${cLabel}</td>
         <td style="color:#00f0ff;font-weight:800;">${p.kills}</td>
         <td>${p.deaths}</td>

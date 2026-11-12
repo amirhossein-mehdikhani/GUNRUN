@@ -279,6 +279,12 @@ MAP_SPAWNS.arena = MAP_SPAWNS.italy;
 MAP_SPAWNS.colosseum = MAP_SPAWNS.italy;
 MAP_SPAWNS.dungeon = MAP_SPAWNS.dust2;
 
+const MAX_TEAM_SIZE = 5;
+const TEAM_COLORS = {
+  blue: '#3b82f6',
+  red: '#ef4444'
+};
+
 function getRandomSpawn(mapId = 'dust2', excludeIndex = -1) {
   const spawns = MAP_SPAWNS[mapId] || MAP_SPAWNS.dust2;
   let idx = Math.floor(Math.random() * spawns.length);
@@ -288,9 +294,87 @@ function getRandomSpawn(mapId = 'dust2', excludeIndex = -1) {
   return { ...spawns[idx], spawnIndex: idx };
 }
 
+function getTeamCounts(room) {
+  let blue = 0;
+  let red = 0;
+  for (const p of Object.values(room.players)) {
+    if (p.team === 'blue') blue++;
+    else if (p.team === 'red') red++;
+  }
+  return { blue, red };
+}
+
+function getTeamSpawn(mapId = 'dust2', team = null, slotIndex = -1) {
+  const spawns = MAP_SPAWNS[mapId] || MAP_SPAWNS.dust2;
+  if (!team || spawns.length < 2) {
+    return getRandomSpawn(mapId);
+  }
+  // Split spawn points by side: Blue uses [0, 2, 4, 5], Red uses [1, 3, 6, 7]
+  const blueIndices = [0, 2, 4, 5].filter(i => i < spawns.length);
+  const redIndices = [1, 3, 6, 7].filter(i => i < spawns.length);
+  const pool = team === 'blue' ? blueIndices : redIndices;
+  const pickIdx = slotIndex >= 0
+    ? pool[slotIndex % pool.length]
+    : pool[Math.floor(Math.random() * pool.length)];
+  return { ...spawns[pickIdx], spawnIndex: pickIdx };
+}
+
+function assignAutoTeam(room, preferredTeam = null) {
+  const counts = getTeamCounts(room);
+  if ((preferredTeam === 'blue' || preferredTeam === 'red') && counts[preferredTeam] < MAX_TEAM_SIZE) {
+    return preferredTeam;
+  }
+  if (counts.blue < MAX_TEAM_SIZE && (counts.blue <= counts.red || counts.red >= MAX_TEAM_SIZE)) {
+    return 'blue';
+  }
+  if (counts.red < MAX_TEAM_SIZE) {
+    return 'red';
+  }
+  return null;
+}
+
+function assignTeamsForAllPlayers(room) {
+  let blueCount = 0;
+  let redCount = 0;
+  for (const p of Object.values(room.players)) {
+    if (p.team === 'blue' && blueCount < MAX_TEAM_SIZE) {
+      blueCount++;
+    } else if (p.team === 'red' && redCount < MAX_TEAM_SIZE) {
+      redCount++;
+    } else if (blueCount < MAX_TEAM_SIZE && blueCount <= redCount) {
+      p.team = 'blue';
+      blueCount++;
+    } else if (redCount < MAX_TEAM_SIZE) {
+      p.team = 'red';
+      redCount++;
+    } else {
+      p.team = 'blue';
+    }
+  }
+}
+
+function buildScoreboard(room) {
+  return Object.values(room.players)
+    .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
+    .map((p, idx) => ({
+      rank: idx + 1,
+      id: p.id,
+      name: p.name,
+      team: p.team || null,
+      color: room.settings.gameMode === 'tdm' && p.team ? TEAM_COLORS[p.team] : p.color,
+      characterType: p.characterType,
+      kills: p.kills,
+      deaths: p.deaths,
+      kd: p.deaths > 0 ? (p.kills / p.deaths).toFixed(1) : p.kills.toFixed(1),
+      health: p.health,
+      isAlive: p.isAlive
+    }));
+}
+
 function getPublicRoomList() {
   const list = [];
   for (const [id, room] of rooms.entries()) {
+    const counts = getTeamCounts(room);
     list.push({
       id: room.id,
       name: room.name,
@@ -299,6 +383,8 @@ function getPublicRoomList() {
       playerCount: Object.keys(room.players).length,
       maxPlayers: room.maxPlayers,
       status: room.status,
+      gameMode: room.settings.gameMode || 'ffa',
+      teamCounts: counts,
       gravity: room.settings.gravity,
       scoreLimit: room.settings.scoreLimit,
       mapId: room.settings.mapId || 'warehouse'
@@ -309,39 +395,140 @@ function getPublicRoomList() {
 
 // Helper: Trigger Match Finish & Final Scoreboard
 function triggerMatchFinish(room, winner) {
-  const playersList = Object.values(room.players).sort((a, b) => b.kills - a.kills);
-  const win = winner || playersList[0];
+  const finalScoreboard = buildScoreboard(room);
+  const topPlayer = Object.values(room.players).sort((a, b) => b.kills - a.kills)[0];
+  const mvp = topPlayer || winner || { id: '', name: 'Operative', kills: 0, deaths: 0 };
+  const isTdm = room.settings.gameMode === 'tdm';
 
-  const finalScoreboard = playersList.map((p, idx) => ({
-    rank: idx + 1,
-    id: p.id,
-    name: p.name,
-    characterType: p.characterType,
-    kills: p.kills,
-    deaths: p.deaths,
-    kd: p.deaths > 0 ? (p.kills / p.deaths).toFixed(1) : p.kills.toFixed(1),
-    health: p.health,
-    isAlive: p.isAlive
-  }));
+  let winningTeam = null;
+  let winnerName = mvp.name;
+  let winnerId = mvp.id;
+
+  if (isTdm) {
+    const blue = room.teamScores?.blue || 0;
+    const red = room.teamScores?.red || 0;
+    if (blue > red) {
+      winningTeam = 'blue';
+      winnerName = 'TEAM BLUE';
+    } else if (red > blue) {
+      winningTeam = 'red';
+      winnerName = 'TEAM RED';
+    } else {
+      winningTeam = 'draw';
+      winnerName = 'DRAW MATCH';
+    }
+    winnerId = winningTeam;
+  } else if (winner) {
+    winnerId = winner.id;
+    winnerName = winner.name;
+  }
 
   room.status = 'ended';
 
   io.to(room.id).emit('match-finished', {
-    winnerId: win.id,
-    winnerName: win.name,
+    gameMode: room.settings.gameMode || 'ffa',
+    winningTeam,
+    teamScores: room.teamScores || { blue: 0, red: 0 },
+    winnerId,
+    winnerName,
     mvp: {
-      id: win.id,
-      name: win.name,
-      kills: win.kills,
-      deaths: win.deaths,
-      kd: win.deaths > 0 ? (win.kills / win.deaths).toFixed(1) : win.kills.toFixed(1)
+      id: mvp.id,
+      name: mvp.name,
+      team: mvp.team || null,
+      kills: mvp.kills,
+      deaths: mvp.deaths,
+      kd: mvp.deaths > 0 ? (mvp.kills / mvp.deaths).toFixed(1) : mvp.kills.toFixed(1)
     },
     scoreboard: finalScoreboard,
     room: room
   });
 
   io.emit('rooms-update', getPublicRoomList());
-  console.log(`[Match Finished] Winner in ${room.name} is ${win.name}`);
+  console.log(`[Match Finished] Winner in ${room.name} is ${winnerName}`);
+}
+
+// Shared helper to process damage, friendly-fire rules, kill attribution, team scores, win check, and respawn
+function applyDamageAndCheckKill(room, roomId, shooter, victim, damage, weaponName, isHeadshot, isGrenade, hitPoint) {
+  if (!victim || !victim.isAlive) return false;
+  const isTdm = room.settings.gameMode === 'tdm';
+
+  // Disable friendly fire against teammates in 2-Team mode (self-damage from own grenade remains active)
+  if (isTdm && shooter && shooter.id !== victim.id && shooter.team && victim.team && shooter.team === victim.team) {
+    return false;
+  }
+
+  victim.health = Math.max(0, victim.health - damage);
+
+  io.to(roomId).emit('player-damaged', {
+    targetId: victim.id,
+    shooterId: shooter?.id || null,
+    health: victim.health,
+    damage: damage,
+    isHeadshot: !!isHeadshot,
+    isGrenade: !!isGrenade,
+    hitPoint: hitPoint
+  });
+
+  if (victim.health > 0) return false;
+
+  victim.isAlive = false;
+  victim.deaths += 1;
+
+  if (shooter && shooter.id !== victim.id) {
+    shooter.kills += 1;
+    if (isTdm) {
+      if (shooter.team === 'blue') room.teamScores.blue += 1;
+      else if (shooter.team === 'red') room.teamScores.red += 1;
+    }
+  }
+
+  io.to(roomId).emit('player-killed', {
+    killerId: shooter?.id || victim.id,
+    killerName: shooter?.name || 'Frag Grenade',
+    killerTeam: shooter?.team || null,
+    victimId: victim.id,
+    victimName: victim.name,
+    victimTeam: victim.team || null,
+    weaponName: weaponName,
+    isHeadshot: !!isHeadshot,
+    gameMode: room.settings.gameMode || 'ffa',
+    teamScores: room.teamScores || { blue: 0, red: 0 },
+    scoreboard: buildScoreboard(room)
+  });
+
+  // Check Win Condition
+  if (isTdm) {
+    if (room.teamScores.blue >= room.settings.scoreLimit || room.teamScores.red >= room.settings.scoreLimit) {
+      triggerMatchFinish(room, shooter);
+      return true;
+    }
+  } else if (shooter && shooter.id !== victim.id && shooter.kills >= room.settings.scoreLimit) {
+    triggerMatchFinish(room, shooter);
+    return true;
+  }
+
+  // Schedule 3-second respawn for victim
+  setTimeout(() => {
+    if (!rooms.has(roomId)) return;
+    const currentRoom = rooms.get(roomId);
+    if (!currentRoom || !currentRoom.players[victim.id] || currentRoom.status !== 'in-game') return;
+
+    const newSpawn = currentRoom.settings.gameMode === 'tdm'
+      ? getTeamSpawn(currentRoom.settings.mapId, victim.team)
+      : getRandomSpawn(currentRoom.settings.mapId);
+
+    victim.health = 100;
+    victim.isAlive = true;
+    victim.position = { x: newSpawn.x, y: newSpawn.y, z: newSpawn.z };
+
+    io.to(roomId).emit('player-respawned', {
+      playerId: victim.id,
+      position: victim.position,
+      health: 100
+    });
+  }, 3000);
+
+  return false;
 }
 
 io.on('connection', (socket) => {
@@ -358,8 +545,12 @@ io.on('connection', (socket) => {
   // Create a room
   socket.on('create-room', ({ roomName, playerName, playerColor, characterType, settings }) => {
     const roomId = 'room_' + Math.random().toString(36).substring(2, 8);
-    const chosenMap = settings?.mapId || 'warehouse';
-    const hostSpawn = getRandomSpawn(chosenMap);
+    const chosenMap = settings?.mapId || 'dust2';
+    const gameMode = settings?.gameMode === 'tdm' ? 'tdm' : 'ffa';
+    const hostTeam = gameMode === 'tdm' ? 'blue' : null;
+    const hostSpawn = gameMode === 'tdm'
+      ? getTeamSpawn(chosenMap, hostTeam, 0)
+      : getRandomSpawn(chosenMap);
 
     const newRoom = {
       id: roomId,
@@ -367,9 +558,12 @@ io.on('connection', (socket) => {
       hostId: socket.id,
       hostName: (playerName || 'Player').trim().substring(0, 16),
       status: 'lobby',
-      maxPlayers: 12,
+      maxPlayers: gameMode === 'tdm' ? MAX_TEAM_SIZE * 2 : 12,
+      teamScores: { blue: 0, red: 0 },
       settings: {
         mapId: chosenMap,
+        gameMode: gameMode,
+        maxTeamSize: MAX_TEAM_SIZE,
         gravity: settings?.gravity || 'normal',
         scoreLimit: Math.min(Math.max(Number(settings?.scoreLimit) || 15, 5), 50)
       },
@@ -378,6 +572,7 @@ io.on('connection', (socket) => {
           id: socket.id,
           name: (playerName || 'Player').trim().substring(0, 16),
           color: playerColor || '#3b82f6',
+          team: hostTeam,
           characterType: characterType || 'soldier',
           isHost: true,
           health: 100,
@@ -400,11 +595,11 @@ io.on('connection', (socket) => {
     });
 
     io.emit('rooms-update', getPublicRoomList());
-    console.log(`[Room Created] ${newRoom.name} (${roomId}) by ${newRoom.hostName} on map ${chosenMap}`);
+    console.log(`[Room Created] ${newRoom.name} (${roomId}) mode=${gameMode} by ${newRoom.hostName} on map ${chosenMap}`);
   });
 
   // Join an existing room
-  socket.on('join-room', ({ roomId, playerName, playerColor, characterType }) => {
+  socket.on('join-room', ({ roomId, playerName, playerColor, characterType, preferredTeam }) => {
     const room = rooms.get(roomId);
     if (!room) {
       return socket.emit('join-error', 'Room does not exist.');
@@ -414,11 +609,24 @@ io.on('connection', (socket) => {
       return socket.emit('join-error', 'Room is currently full.');
     }
 
-    const spawn = getRandomSpawn(room.settings.mapId);
+    const isTdm = room.settings.gameMode === 'tdm';
+    let assignedTeam = null;
+    if (isTdm) {
+      assignedTeam = assignAutoTeam(room, preferredTeam);
+      if (!assignedTeam) {
+        return socket.emit('join-error', 'Both teams are full (5/5 max per team).');
+      }
+    }
+
+    const spawn = isTdm
+      ? getTeamSpawn(room.settings.mapId, assignedTeam)
+      : getRandomSpawn(room.settings.mapId);
+
     const newPlayer = {
       id: socket.id,
       name: (playerName || 'Player').trim().substring(0, 16),
       color: playerColor || '#10b981',
+      team: assignedTeam,
       characterType: characterType || 'soldier',
       isHost: false,
       health: 100,
@@ -440,10 +648,31 @@ io.on('connection', (socket) => {
 
     socket.to(roomId).emit('player-joined-room', newPlayer);
     io.emit('rooms-update', getPublicRoomList());
-    console.log(`[Player Joined] ${newPlayer.name} (${newPlayer.characterType}) joined ${room.name} (${roomId})`);
+    console.log(`[Player Joined] ${newPlayer.name} (${newPlayer.characterType}${assignedTeam ? `, team=${assignedTeam}` : ''}) joined ${room.name} (${roomId})`);
   });
 
-  // Host updates room settings (Map, Gravity, ScoreLimit)
+  // Switch Team in 2-Team mode (Max 5 per team; unbalanced teams explicitly allowed)
+  socket.on('switch-team', ({ team }) => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room || room.settings.gameMode !== 'tdm') return;
+    const player = room.players[socket.id];
+    if (!player) return;
+    if (team !== 'blue' && team !== 'red') return;
+    if (player.team === team) return;
+
+    const counts = getTeamCounts(room);
+    if (counts[team] >= MAX_TEAM_SIZE) {
+      return socket.emit('team-switch-error', `Team ${team === 'blue' ? 'Blue' : 'Red'} is already full (5/5).`);
+    }
+
+    player.team = team;
+    io.to(currentRoomId).emit('room-updated', { room });
+    io.emit('rooms-update', getPublicRoomList());
+    console.log(`[Team Switched] ${player.name} -> Team ${team.toUpperCase()} (${room.name})`);
+  });
+
+  // Host updates room settings (Map, Gravity, ScoreLimit, GameMode)
   socket.on('update-room-settings', ({ settings }) => {
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
@@ -453,9 +682,24 @@ io.on('connection', (socket) => {
     if (settings.gravity) room.settings.gravity = settings.gravity;
     if (settings.scoreLimit) room.settings.scoreLimit = Math.min(Math.max(Number(settings.scoreLimit), 5), 50);
 
+    if (settings.gameMode === 'tdm' || settings.gameMode === 'ffa') {
+      room.settings.gameMode = settings.gameMode;
+      if (settings.gameMode === 'tdm') {
+        room.maxPlayers = MAX_TEAM_SIZE * 2;
+        room.teamScores = { blue: 0, red: 0 };
+        assignTeamsForAllPlayers(room);
+      } else {
+        room.maxPlayers = 12;
+        for (const p of Object.values(room.players)) {
+          p.team = null;
+        }
+      }
+      io.to(currentRoomId).emit('room-updated', { room });
+    }
+
     io.to(currentRoomId).emit('room-settings-updated', room.settings);
     io.emit('rooms-update', getPublicRoomList());
-    console.log(`[Room Settings Updated] ${room.name}: Map=${room.settings.mapId}, Gravity=${room.settings.gravity}`);
+    console.log(`[Room Settings Updated] ${room.name}: Mode=${room.settings.gameMode}, Map=${room.settings.mapId}, Gravity=${room.settings.gravity}`);
   });
 
   // Host starts the match
@@ -465,17 +709,24 @@ io.on('connection', (socket) => {
     if (!room || room.hostId !== socket.id) return;
 
     room.status = 'in-game';
+    room.teamScores = { blue: 0, red: 0 };
 
-    // Assign fresh spawn points for chosen map and reset stats
+    const isTdm = room.settings.gameMode === 'tdm';
     const spawns = MAP_SPAWNS[room.settings.mapId] || MAP_SPAWNS.warehouse;
     let sIdx = 0;
+    let blueSlot = 0;
+    let redSlot = 0;
+
     for (const pid of Object.keys(room.players)) {
-      const sp = spawns[sIdx % spawns.length];
-      room.players[pid].health = 100;
-      room.players[pid].kills = 0;
-      room.players[pid].deaths = 0;
-      room.players[pid].isAlive = true;
-      room.players[pid].position = { x: sp.x, y: sp.y, z: sp.z };
+      const player = room.players[pid];
+      const sp = isTdm
+        ? getTeamSpawn(room.settings.mapId, player.team, player.team === 'blue' ? blueSlot++ : redSlot++)
+        : spawns[sIdx % spawns.length];
+      player.health = 100;
+      player.kills = 0;
+      player.deaths = 0;
+      player.isAlive = true;
+      player.position = { x: sp.x, y: sp.y, z: sp.z };
       sIdx++;
     }
 
@@ -484,7 +735,7 @@ io.on('connection', (socket) => {
     });
 
     io.emit('rooms-update', getPublicRoomList());
-    console.log(`[Match Started] Room ${room.name} (${currentRoomId}) started on ${room.settings.mapId}!`);
+    console.log(`[Match Started] Room ${room.name} (${currentRoomId}) started (${room.settings.gameMode}) on ${room.settings.mapId}!`);
   });
 
   // In-game: Player Movement Sync
@@ -574,67 +825,18 @@ io.on('connection', (socket) => {
           damage = Math.round(100 - ratio * 85);
         }
 
-        victim.health = Math.max(0, victim.health - damage);
-
-        io.to(currentRoomId).emit('player-damaged', {
-          targetId: victim.id,
-          shooterId: thrower?.id || socket.id,
-          health: victim.health,
-          damage: damage,
-          isHeadshot: false,
-          isGrenade: true,
-          hitPoint: data.explosionPoint
-        });
-
-        if (victim.health <= 0) {
-          victim.isAlive = false;
-          victim.deaths += 1;
-          if (thrower && thrower.id !== victim.id) {
-            thrower.kills += 1;
-          }
-
-          io.to(currentRoomId).emit('player-killed', {
-            killerId: thrower?.id || socket.id,
-            killerName: thrower?.name || 'Frag Grenade',
-            victimId: victim.id,
-            victimName: victim.name,
-            weaponName: 'Frag Grenade 💣',
-            isHeadshot: false,
-            scoreboard: Object.values(room.players).map(p => ({
-              id: p.id,
-              name: p.name,
-              characterType: p.characterType,
-              kills: p.kills,
-              deaths: p.deaths,
-              health: p.health,
-              isAlive: p.isAlive
-            }))
-          });
-
-          // Check Win Condition
-          if (thrower && thrower.kills >= room.settings.scoreLimit) {
-            triggerMatchFinish(room, thrower);
-            return;
-          }
-
-          // Respawn
-          setTimeout(() => {
-            if (!rooms.has(currentRoomId)) return;
-            const currentRoom = rooms.get(currentRoomId);
-            if (!currentRoom || !currentRoom.players[victim.id]) return;
-
-            const newSpawn = getRandomSpawn(currentRoom.settings.mapId);
-            victim.health = 100;
-            victim.isAlive = true;
-            victim.position = { x: newSpawn.x, y: newSpawn.y, z: newSpawn.z };
-
-            io.to(currentRoomId).emit('player-respawned', {
-              playerId: victim.id,
-              position: victim.position,
-              health: 100
-            });
-          }, 3000);
-        }
+        const matchEnded = applyDamageAndCheckKill(
+          room,
+          currentRoomId,
+          thrower,
+          victim,
+          damage,
+          'Frag Grenade 💣',
+          false,
+          true,
+          data.explosionPoint
+        );
+        if (matchEnded) return;
       }
     }
   });
@@ -688,66 +890,17 @@ io.on('connection', (socket) => {
         damage = data.isHeadshot ? 36 : 18;
       }
 
-      victim.health = Math.max(0, victim.health - damage);
-
-      // Notify room about damage
-      io.to(currentRoomId).emit('player-damaged', {
-        targetId: victim.id,
-        shooterId: shooter.id,
-        health: victim.health,
-        damage: damage,
-        isHeadshot: !!data.isHeadshot,
-        hitPoint: data.hitPoint
-      });
-
-      // Check if victim died
-      if (victim.health <= 0) {
-        victim.isAlive = false;
-        victim.deaths += 1;
-        shooter.kills += 1;
-
-        io.to(currentRoomId).emit('player-killed', {
-          killerId: shooter.id,
-          killerName: shooter.name,
-          victimId: victim.id,
-          victimName: victim.name,
-          weaponName: weaponName,
-          isHeadshot: !!data.isHeadshot,
-          scoreboard: Object.values(room.players).map(p => ({
-            id: p.id,
-            name: p.name,
-            characterType: p.characterType,
-            kills: p.kills,
-            deaths: p.deaths,
-            health: p.health,
-            isAlive: p.isAlive
-          }))
-        });
-
-        // Check Match Win Condition (Kill limit reached)
-        if (shooter.kills >= room.settings.scoreLimit) {
-          triggerMatchFinish(room, shooter);
-          return;
-        }
-
-        // Schedule 3-second respawn for victim
-        setTimeout(() => {
-          if (!rooms.has(currentRoomId)) return;
-          const currentRoom = rooms.get(currentRoomId);
-          if (!currentRoom || !currentRoom.players[victim.id]) return;
-
-          const newSpawn = getRandomSpawn(currentRoom.settings.mapId);
-          victim.health = 100;
-          victim.isAlive = true;
-          victim.position = { x: newSpawn.x, y: newSpawn.y, z: newSpawn.z };
-
-          io.to(currentRoomId).emit('player-respawned', {
-            playerId: victim.id,
-            position: victim.position,
-            health: 100
-          });
-        }, 3000);
-      }
+      applyDamageAndCheckKill(
+        room,
+        currentRoomId,
+        shooter,
+        victim,
+        damage,
+        weaponName,
+        !!data.isHeadshot,
+        false,
+        data.hitPoint
+      );
     }
   });
 
@@ -757,17 +910,25 @@ io.on('connection', (socket) => {
     const room = rooms.get(currentRoomId);
     if (!room) return;
 
+    const isTdm = room.settings.gameMode === 'tdm';
     const spawns = MAP_SPAWNS[room.settings.mapId] || MAP_SPAWNS.warehouse;
     let sIdx = 0;
+    let blueIdx = 0;
+    let redIdx = 0;
+
     for (const pid of Object.keys(room.players)) {
-      const sp = spawns[sIdx % spawns.length];
-      room.players[pid].health = 100;
-      room.players[pid].kills = 0;
-      room.players[pid].deaths = 0;
-      room.players[pid].isAlive = true;
-      room.players[pid].position = { x: sp.x, y: sp.y, z: sp.z };
+      const player = room.players[pid];
+      const sp = isTdm
+        ? getTeamSpawn(room.settings.mapId, player.team, player.team === 'red' ? redIdx++ : blueIdx++)
+        : spawns[sIdx % spawns.length];
+      player.health = 100;
+      player.kills = 0;
+      player.deaths = 0;
+      player.isAlive = true;
+      player.position = { x: sp.x, y: sp.y, z: sp.z };
       sIdx++;
     }
+    room.teamScores = { blue: 0, red: 0 };
     room.status = 'in-game';
 
     io.to(currentRoomId).emit('match-restarted', { room });
@@ -792,6 +953,7 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     room.status = 'lobby';
+    room.teamScores = { blue: 0, red: 0 };
     for (const p of Object.values(room.players)) {
       p.kills = 0;
       p.deaths = 0;

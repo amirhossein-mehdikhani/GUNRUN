@@ -50,12 +50,15 @@ export class RemotePlayer {
     this.name = playerData.name || 'Soldier';
     this.color = playerData.color || '#3b82f6';
     this.characterType = playerData.characterType || 'soldier'; // 'soldier' | 'robot' | 'cyborg' | 'heavy'
+    this.team = playerData.team || null; // 'blue' | 'red' | null
+    this.isTeammate = !!playerData.isTeammate;
     this.health = playerData.health ?? 100;
     this.isAlive = playerData.isAlive ?? true;
 
     this.group = new THREE.Group();
     this.hitboxes = [];
     this.isUsingGltf = false;
+    this.teamRing = null;
 
     // Procedural animation state
     this.walkAnimTime = 0;
@@ -68,6 +71,7 @@ export class RemotePlayer {
     this.overheadSprite = null;
 
     this.initModel();
+    this.buildTeamRing();
     this.buildOverheadUI();
 
     this.group.position.set(playerData.position.x, playerData.position.y, playerData.position.z);
@@ -333,6 +337,22 @@ export class RemotePlayer {
     this.hitboxes.push(headBox);
   }
 
+  buildTeamRing() {
+    if (!this.team) return;
+    const teamHex = this.team === 'red' ? 0xef4444 : 0x3b82f6;
+    const ringGeo = new THREE.RingGeometry(0.45, 0.58, 24);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: teamHex,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: this.isTeammate ? 0.85 : 0.65
+    });
+    this.teamRing = new THREE.Mesh(ringGeo, ringMat);
+    this.teamRing.rotation.x = -Math.PI / 2;
+    this.teamRing.position.y = -0.84;
+    this.group.add(this.teamRing);
+  }
+
   buildOverheadUI() {
     this.overheadCanvas = document.createElement('canvas');
     this.overheadCanvas.width = 256;
@@ -362,17 +382,33 @@ export class RemotePlayer {
 
     ctx.clearRect(0, 0, w, h);
 
-    // Background pill
-    ctx.fillStyle = 'rgba(10, 14, 22, 0.75)';
+    // Background pill with optional team border
+    ctx.fillStyle = 'rgba(10, 14, 22, 0.78)';
     ctx.beginPath();
     ctx.roundRect(8, 4, w - 16, h - 8, 8);
     ctx.fill();
 
-    // Nickname & character badge
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    if (this.team) {
+      ctx.strokeStyle = this.team === 'red' ? '#ef4444' : '#3b82f6';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+
+    // Nickname & team badge
+    let displayName = this.name;
+    let nameColor = '#ffffff';
+    if (this.team === 'blue') {
+      nameColor = '#93c5fd';
+      displayName = this.isTeammate ? `[ALLY] ${this.name}` : `[BLUE] ${this.name}`;
+    } else if (this.team === 'red') {
+      nameColor = '#fca5a5';
+      displayName = this.isTeammate ? `[ALLY] ${this.name}` : `[RED] ${this.name}`;
+    }
+
+    ctx.fillStyle = nameColor;
+    ctx.font = 'bold 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`${this.name}`, w / 2, 25);
+    ctx.fillText(displayName, w / 2, 25);
 
     // Health Bar
     const barW = w - 40;
