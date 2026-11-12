@@ -150,7 +150,13 @@ export class RemotePlayer {
     this.gltfRoot = clonedModel;
     this.group.add(clonedModel);
     this.isUsingGltf = true;
-    this.setupHitboxVolumes();
+    clonedModel.updateMatrixWorld(true);
+    const modelBox = new THREE.Box3().setFromObject(clonedModel);
+    this.setupHitboxVolumes({
+      minY: Number.isFinite(modelBox.min.y) ? modelBox.min.y : -1.6,
+      maxY: Number.isFinite(modelBox.max.y) ? modelBox.max.y : 0.2,
+      headRadius: 0.25
+    });
   }
 
   buildProceduralModel() {
@@ -313,28 +319,45 @@ export class RemotePlayer {
     }
   }
 
-  setupHitboxVolumes() {
+  setupHitboxVolumes(bounds = null) {
     this.hitboxes = [];
 
-    // Body hitbox (cylinder)
+    const feetY = bounds ? bounds.minY : -1.15;
+    const topY = bounds ? bounds.maxY : (this.characterType === 'heavy' ? 0.85 : 0.78);
+    const headRadius = bounds ? bounds.headRadius : (this.characterType === 'heavy' ? 0.27 : 0.25);
+
+    // Position head sphere directly over the character's actual skull/face with zero body overlap
+    const headCenterY = topY - headRadius * 0.75;
+    const bodyTopY = headCenterY - headRadius * 0.85;
+    const bodyHeight = Math.max(0.6, bodyTopY - feetY);
+    const bodyCenterY = feetY + bodyHeight * 0.5;
+
+    // Body hitbox (cylinder stopping cleanly below the neck)
     const bodyBox = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.45, 0.45, 1.25, 8),
+      new THREE.CylinderGeometry(0.42, 0.42, bodyHeight, 8),
       new THREE.MeshBasicMaterial({ visible: false })
     );
-    bodyBox.position.set(0, -0.2, 0);
+    bodyBox.position.set(0, bodyCenterY, 0);
     bodyBox.userData = { playerId: this.id, isHead: false };
     this.group.add(bodyBox);
     this.hitboxes.push(bodyBox);
 
-    // Head hitbox (precision sphere)
+    // Head hitbox (precision sphere aligned to visible head)
     const headBox = new THREE.Mesh(
-      new THREE.SphereGeometry(0.32, 8, 8),
+      new THREE.SphereGeometry(headRadius, 10, 8),
       new THREE.MeshBasicMaterial({ visible: false })
     );
-    headBox.position.set(0, 0.55, 0);
+    headBox.position.set(0, headCenterY, 0);
     headBox.userData = { playerId: this.id, isHead: true };
     this.group.add(headBox);
     this.hitboxes.push(headBox);
+
+    if (this.overheadSprite) {
+      this.overheadSprite.position.y = topY + 0.35;
+    }
+    if (this.teamRing) {
+      this.teamRing.position.y = feetY + 0.03;
+    }
   }
 
   buildTeamRing() {

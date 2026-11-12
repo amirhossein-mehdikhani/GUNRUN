@@ -1490,10 +1490,11 @@ class GameApp {
 
   triggerHitmarker(isCrit) {
     SoundEffects.playHitmarker(isCrit);
+    this.hitmarker.classList.toggle('crit', !!isCrit);
     this.hitmarker.classList.add('show');
     setTimeout(() => {
-      this.hitmarker.classList.remove('show');
-    }, 120);
+      this.hitmarker.classList.remove('show', 'crit');
+    }, 140);
   }
 
   handleLocalDeath(killerName) {

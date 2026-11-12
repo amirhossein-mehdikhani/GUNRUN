@@ -11,7 +11,7 @@ export const WEAPON_TYPES = {
     fireRate: 100, // ms (automatic)
     isAutomatic: true,
     damageBody: 18,
-    damageHead: 36,
+    damageHead: 100,
     range: 120,
     speedMultiplier: 1.0,
     reloadDuration: 1500
@@ -24,7 +24,7 @@ export const WEAPON_TYPES = {
     fireRate: 240, // ms (semi-auto)
     isAutomatic: false,
     damageBody: 35,
-    damageHead: 70,
+    damageHead: 100,
     range: 140,
     speedMultiplier: 1.05,
     reloadDuration: 1400
@@ -36,8 +36,8 @@ export const WEAPON_TYPES = {
     maxAmmo: 5,
     fireRate: 1200, // ms (bolt-action)
     isAutomatic: false,
-    damageBody: 95,
-    damageHead: 190,
+    damageBody: 100,
+    damageHead: 200,
     range: 200,
     speedMultiplier: 0.95,
     reloadDuration: 2200,
@@ -51,7 +51,7 @@ export const WEAPON_TYPES = {
     fireRate: 350, // ms
     isAutomatic: false,
     damageBody: 55,
-    damageHead: 110,
+    damageHead: 120,
     range: 3.2,
     speedMultiplier: 1.15, // Fast run speed while holding knife!
     reloadDuration: 0,

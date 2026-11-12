@@ -878,16 +878,16 @@ io.on('connection', (socket) => {
       let weaponName = 'Assault Rifle 🔫';
 
       if (data.weaponSlot === 2) {
-        damage = data.isHeadshot ? 70 : 35;
+        damage = data.isHeadshot ? 100 : 35;
         weaponName = 'Semi-Auto DMR 🎯';
       } else if (data.weaponSlot === 3) {
-        damage = data.isHeadshot ? 190 : 95;
+        damage = data.isHeadshot ? 200 : 100;
         weaponName = 'Heavy Sniper 🎯';
       } else if (data.weaponSlot === 4) {
-        damage = data.isBackstab ? 120 : 55;
+        damage = (data.isBackstab || data.isHeadshot) ? 120 : 55;
         weaponName = data.isBackstab ? 'Knife Backstab 🔪' : 'Combat Knife 🔪';
       } else {
-        damage = data.isHeadshot ? 36 : 18;
+        damage = data.isHeadshot ? 100 : 18;
       }
 
       applyDamageAndCheckKill(
