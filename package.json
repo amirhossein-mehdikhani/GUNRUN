@@ -1,0 +1,38 @@
+{
+  "name": "rungun",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "download-assets": "node download-assets.js",
+    "build:win": "pkg --targets node22-win-x64 --output dist/fps-lan-server-win.exe .",
+    "build:macos": "pkg --targets node22-macos-x64 --output dist/fps-lan-server-macos .",
+    "build:linux": "pkg --targets node22-linux-x64 --output dist/fps-lan-server-linux .",
+    "build:all": "npm run build:win && npm run build:macos && npm run build:linux"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*",
+      "node_modules/three/build/**/*",
+      "node_modules/three/examples/jsm/**/*",
+      "node_modules/socket.io-client/dist/**/*",
+      "node_modules/socket.io/client-dist/**/*"
+    ],
+    "outputPath": "dist"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "3D Multiplayer First-Person Shooter for LAN",
+  "dependencies": {
+    "express": "^5.3.0",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.25.0"
+  }
+}

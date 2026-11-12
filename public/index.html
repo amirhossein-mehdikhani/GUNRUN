@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>RUNGUN - LAN 3D Multiplayer FPS</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Three.js Import Map served locally from /node_modules/three/ for 100% offline LAN play -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/node_modules/three/build/three.module.js",
+      "three/addons/": "/node_modules/three/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- Socket.io served locally with instant fallback -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    if (typeof io === 'undefined') {
+      document.write('<script src="/js/socket.io.min.js"><\/script>');
+    }
+  </script>
+</head>
+<body>
+  <!-- 3D WebGL Canvas -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- ==========================================
+       1. MAIN LOBBY & HOST/JOIN ROOM OVERLAY
+       ========================================== -->
+  <div id="screen-lobby" class="overlay-screen">
+    <div class="lobby-card">
+      <div class="lobby-header">
+        <div class="logo-wrap">
+          <span class="logo-text">🔫 RUNGUN</span>
+          <span class="badge-lan">LAN MULTIPLAYER</span>
+        </div>
+        <div class="lan-ip-info" id="lan-host-ip" title="Click to copy LAN URL">
+          <span>📡 Fetching LAN URL...</span>
+        </div>
+      </div>
+
+      <!-- 3-TAB LOBBY NAVIGATION BAR -->
+      <div class="lobby-nav-tabs">
+        <button class="lobby-tab-btn active" data-tab="home">
+          <span class="tab-icon">🏠</span>
+          <span class="tab-label">Home</span>
+        </button>
+        <button class="lobby-tab-btn" data-tab="maps">
+          <span class="tab-icon">🗺️</span>
+          <span class="tab-label">Maps</span>
+          <span class="tab-pill" id="tab-pill-map">Dust II</span>
+        </button>
+        <button class="lobby-tab-btn" data-tab="characters">
+          <span class="tab-icon">👤</span>
+          <span class="tab-label">Operators</span>
+          <span class="tab-pill" id="tab-pill-char">Soldier</span>
+        </button>
+      </div>
+
+      <div class="lobby-body">
+        <!-- ==========================================
+             TAB 1: HOMEPAGE (Overview, Quick Setup & Server Browser)
+             ========================================== -->
+        <div id="tab-pane-home" class="tab-pane active">
+          <!-- Left: Player Profile & Host Room Form -->
+          <div class="panel-section">
+            <div class="section-title">👤 Operator Profile</div>
+
+            <div class="form-group">
+              <label for="player-nickname">Codename / Nickname</label>
+              <input type="text" id="player-nickname" class="form-input" placeholder="Soldier_01" maxlength="16">
+            </div>
+
+            <!-- Quick Character Overview Card -->
+            <div class="form-group">
+              <label>Selected Operative</label>
+              <div class="quick-preview-card" id="home-quick-char-card">
+                <img src="/assets/images/characters/soldier.jpg" class="quick-preview-thumb" id="home-quick-char-img" alt="Selected Character">
+                <div class="quick-preview-info">
+                  <div class="quick-preview-title" id="home-quick-char-title">Soldier <span id="home-quick-char-colordot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#3b82f6;"></span></div>
+                  <div class="quick-preview-desc" id="home-quick-char-desc">Tactical Commando</div>
+                </div>
+                <button class="quick-preview-btn" data-switch-tab="characters">Customize</button>
+              </div>
+            </div>
+
+            <!-- Quick Map Overview Card -->
+            <div class="form-group">
+              <label>Selected Battle Arena</label>
+              <div class="quick-preview-card" id="home-quick-map-card">
+                <img src="/assets/images/maps/dust2.jpg" class="quick-preview-thumb" id="home-quick-map-img" alt="Selected Map">
+                <div class="quick-preview-info">
+                  <div class="quick-preview-title" id="home-quick-map-title">Dust II</div>
+                  <div class="quick-preview-desc" id="home-quick-map-desc">CS de_dust2 (Counter-Strike)</div>
+                </div>
+                <button class="quick-preview-btn" data-switch-tab="maps">Change Arena</button>
+              </div>
+            </div>
+
+            <!-- Hidden compatibility containers -->
+            <div id="character-selector" style="display:none;">
+              <div class="character-card selected" data-character="soldier"></div>
+              <div class="character-card" data-character="robot"></div>
+              <div class="character-card" data-character="cyborg"></div>
+              <div class="character-card" data-character="heavy"></div>
+            </div>
+            <div id="map-selector" style="display:none;">
+              <div class="map-card selected" data-map="dust2"></div>
+              <div class="map-card" data-map="stalkyard"></div>
+              <div class="map-card" data-map="turbine"></div>
+              <div class="map-card" data-map="frenzy"></div>
+              <div class="map-card" data-map="italy"></div>
+            </div>
+
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); margin: 4px 0;"></div>
+
+            <div class="section-title">🚀 Host New Match</div>
+
+            <div class="form-group">
+              <label for="room-name">Lobby / Room Name</label>
+              <input type="text" id="room-name" class="form-input" value="Tactical Hangar" maxlength="24">
+            </div>
+
+            <div class="form-group">
+              <label for="gravity-select">Gravity Mode</label>
+              <select id="gravity-select" class="form-select">
+                <option value="normal">Standard Earth Gravity (1.0x)</option>
+                <option value="low">Low Gravity Combat (0.5x)</option>
+                <option value="antigravity">Antigravity / Moon Float (0.2x)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="score-limit-select">Score Limit</label>
+              <select id="score-limit-select" class="form-select">
+                <option value="10">10 Kills</option>
+                <option value="15" selected>15 Kills</option>
+                <option value="25">25 Kills</option>
+              </select>
+            </div>
+
+            <button id="btn-create-room" class="btn btn-primary" style="margin-top: 6px;">
+              CREATE ROOM (HOST)
+            </button>
+          </div>
+
+          <!-- Right: Active LAN Games Live List -->
+          <div class="panel-section">
+            <div class="section-title">🌐 Active LAN Rooms</div>
+            <div id="rooms-list" class="rooms-container">
+              <div class="no-rooms">
+                Scanning LAN for active matches...
+              </div>
+            </div>
+            <div style="font-size: 11px; color: var(--text-dim); line-height: 1.4; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span>💡 Any player on your Wi-Fi or LAN can host or join instantly.</span>
+              <button id="btn-copy-lan-footer" class="quick-preview-btn" style="padding: 4px 10px; font-size: 10px;">📋 Copy LAN URL</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             TAB 2: MAPS SHOWCASE (5 Distinct 3D Arenas)
+             ========================================== -->
+        <div id="tab-pane-maps" class="tab-pane">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div class="section-title" style="font-size:16px;">🗺️ 3D Combat Arenas</div>
+              <div style="font-size:12px; color:var(--text-dim); margin-top:2px;">
+                Click any arena card to select it for your hosted match.
+              </div>
+            </div>
+          </div>
+
+          <div class="map-gallery-grid">
+            <!-- 1. Dust II -->
+            <div class="map-gallery-card selected" data-map="dust2">
+              <div class="map-gallery-thumb-wrap">
+                <img src="/assets/images/maps/dust2.jpg" class="map-gallery-thumb" alt="Dust II">
+                <div class="map-selected-badge">✓ SELECTED</div>
+              </div>
+              <div class="map-gallery-body">
+                <div class="map-gallery-header">
+                  <div class="map-gallery-title">Dust II</div>
+                  <div class="map-game-tag">Counter-Strike</div>
+                </div>
+                <div class="map-badge-row">
+                  <span class="map-chip">1:1 Real Scale</span>
+                  <span class="map-chip">9,294 Tris</span>
+                  <span class="map-chip">A-Site & Long</span>
+                </div>
+                <div class="map-gallery-desc">
+                  Legendary Counter-Strike bomb defusal map featuring Bombsite A, Long corridor, Pit, and Catwalk with authentic human scale.
+                </div>
+                <button class="map-select-btn">Select Arena</button>
+              </div>
+            </div>
+
+            <!-- 2. Stalkyard -->
+            <div class="map-gallery-card" data-map="stalkyard">
+              <div class="map-gallery-thumb-wrap">
+                <img src="/assets/images/maps/stalkyard.jpg" class="map-gallery-thumb" alt="Stalkyard">
+                <div class="map-selected-badge">✓ SELECTED</div>
+              </div>
+              <div class="map-gallery-body">
+                <div class="map-gallery-header">
+                  <div class="map-gallery-title">Stalkyard</div>
+                  <div class="map-game-tag">Half-Life</div>
+                </div>
+                <div class="map-badge-row">
+                  <span class="map-chip">Industrial CQB</span>
+                  <span class="map-chip">6,405 Tris</span>
+                  <span class="map-chip">Hall & Catwalks</span>
+                </div>
+                <div class="map-gallery-desc">
+                  Classic Half-Life storage facility featuring indoor warehouse halls, metal walkways, and intense close-quarters combat.
+                </div>
+                <button class="map-select-btn">Select Arena</button>
+              </div>
+            </div>
+
+            <!-- 3. DM-Turbine -->
+            <div class="map-gallery-card" data-map="turbine">
+              <div class="map-gallery-thumb-wrap">
+                <img src="/assets/images/maps/turbine.jpg" class="map-gallery-thumb" alt="DM-Turbine">
+                <div class="map-selected-badge">✓ SELECTED</div>
+              </div>
+              <div class="map-gallery-body">
+                <div class="map-gallery-header">
+                  <div class="map-gallery-title">DM-Turbine</div>
+                  <div class="map-game-tag">Unreal Tournament</div>
+                </div>
+                <div class="map-badge-row">
+                  <span class="map-chip">Multi-Tier Arena</span>
+                  <span class="map-chip">11,956 Tris</span>
+                  <span class="map-chip">Vertical Combat</span>
+                </div>
+                <div class="map-gallery-desc">
+                  Iconic Unreal Tournament deathmatch arena featuring massive turbine chambers, elevated bridges, and vertical combat.
+                </div>
+                <button class="map-select-btn">Select Arena</button>
+              </div>
+            </div>
+
+            <!-- 4. Frenzy -->
+            <div class="map-gallery-card" data-map="frenzy">
+              <div class="map-gallery-thumb-wrap">
+                <img src="/assets/images/maps/frenzy.jpg" class="map-gallery-thumb" alt="Frenzy">
+                <div class="map-selected-badge">✓ SELECTED</div>
+              </div>
+              <div class="map-gallery-body">
+                <div class="map-gallery-header">
+                  <div class="map-gallery-title">Frenzy</div>
+                  <div class="map-game-tag">Half-Life Crossfire</div>
+                </div>
+                <div class="map-badge-row">
+                  <span class="map-chip">Combat Fortress</span>
+                  <span class="map-chip">5,122 Tris</span>
+                  <span class="map-chip">Courtyard & Bunkers</span>
+                </div>
+                <div class="map-gallery-desc">
+                  High-octane Half-Life combat outpost featuring a central courtyard, underground bunkers, watchtowers, and long sightlines.
+                </div>
+                <button class="map-select-btn">Select Arena</button>
+              </div>
+            </div>
+
+            <!-- 5. cs_italy -->
+            <div class="map-gallery-card" data-map="italy">
+              <div class="map-gallery-thumb-wrap">
+                <img src="/assets/images/maps/italy.jpg" class="map-gallery-thumb" alt="cs_italy">
+                <div class="map-selected-badge">✓ SELECTED</div>
+              </div>
+              <div class="map-gallery-body">
+                <div class="map-gallery-header">
+                  <div class="map-gallery-title">cs_italy</div>
+                  <div class="map-game-tag">Counter-Strike</div>
+                </div>
+                <div class="map-badge-row">
+                  <span class="map-chip">Cobblestone Village</span>
+                  <span class="map-chip">19,643 Tris</span>
+                  <span class="map-chip">Market & Wine Cellar</span>
+                </div>
+                <div class="map-gallery-desc">
+                  Iconic Counter-Strike Italy map featuring the famous open marketplace, narrow cobblestone alleys, wine cellar, and hostage house.
+                </div>
+                <button class="map-select-btn">Select Arena</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             TAB 3: CHARACTERS SHOWCASE (4 Playable Models)
+             ========================================== -->
+        <div id="tab-pane-characters" class="tab-pane">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div>
+              <div class="section-title" style="font-size:16px;">👤 Operative Classes</div>
+              <div style="font-size:12px; color:var(--text-dim); margin-top:2px;">
+                Choose your combat operative and customize their armor accent color.
+              </div>
+            </div>
+
+            <!-- Armor Accent Color Picker -->
+            <div style="display:flex; align-items:center; gap:10px; background:rgba(0,0,0,0.35); padding:8px 14px; border-radius:6px; border:1px solid rgba(255,255,255,0.08);">
+              <span style="font-size:12px; font-weight:700; color:var(--text-dim); text-transform:uppercase;">Armor Color:</span>
+              <div class="color-palette">
+                <div class="color-option selected" style="background:#3b82f6" data-color="#3b82f6" title="Cyan Blue"></div>
+                <div class="color-option" style="background:#10b981" data-color="#10b981" title="Emerald Green"></div>
+                <div class="color-option" style="background:#ef4444" data-color="#ef4444" title="Crimson Red"></div>
+                <div class="color-option" style="background:#f59e0b" data-color="#f59e0b" title="Amber Orange"></div>
+                <div class="color-option" style="background:#8b5cf6" data-color="#8b5cf6" title="Neon Purple"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="character-gallery-grid">
+            <!-- 1. Soldier -->
+            <div class="character-gallery-card selected" data-character="soldier">
+              <div class="character-gallery-thumb-wrap">
+                <img src="/assets/images/characters/soldier.jpg" class="character-gallery-thumb" alt="Soldier">
+                <div class="character-selected-badge">✓ ACTIVE</div>
+              </div>
+              <div class="character-gallery-body">
+                <div class="character-gallery-title">Tactical Soldier</div>
+                <div class="character-role-tag">Tactical Commando</div>
+                <div class="character-stat-chips">
+                  <span class="character-chip">SPEED: 100%</span>
+                  <span class="character-chip">ARMOR: 100%</span>
+                  <span class="character-chip">MILITARY CAMO</span>
+                </div>
+                <div class="character-gallery-desc">
+                  Special operations soldier equipped with standard tactical combat gear, balanced mobility, and military camouflage.
+                </div>
+                <button class="character-select-btn">Select Operative</button>
+              </div>
+            </div>
+
+            <!-- 2. Cyber Mech -->
+            <div class="character-gallery-card" data-character="robot">
+              <div class="character-gallery-thumb-wrap">
+                <img src="/assets/images/characters/robot.jpg" class="character-gallery-thumb" alt="Cyber Mech">
+                <div class="character-selected-badge">✓ ACTIVE</div>
+              </div>
+              <div class="character-gallery-body">
+                <div class="character-gallery-title">Cyber Mech</div>
+                <div class="character-role-tag">Recon Droid</div>
+                <div class="character-stat-chips">
+                  <span class="character-chip">SPEED: 105%</span>
+                  <span class="character-chip">ARMOR: 95%</span>
+                  <span class="character-chip">MECHANICAL JOINTS</span>
+                </div>
+                <div class="character-gallery-desc">
+                  Agile combat automaton with articulated hydraulic joints, optical sensors, and rapid evasive mobility.
+                </div>
+                <button class="character-select-btn">Select Operative</button>
+              </div>
+            </div>
+
+            <!-- 3. Cyborg -->
+            <div class="character-gallery-card" data-character="cyborg">
+              <div class="character-gallery-thumb-wrap">
+                <img src="/assets/images/characters/cyborg.jpg" class="character-gallery-thumb" alt="Cyborg">
+                <div class="character-selected-badge">✓ ACTIVE</div>
+              </div>
+              <div class="character-gallery-body">
+                <div class="character-gallery-title">Cyborg</div>
+                <div class="character-role-tag">Spec-Ops Android (Xbot)</div>
+                <div class="character-stat-chips">
+                  <span class="character-chip">SPEED: 100%</span>
+                  <span class="character-chip">ARMOR: 100%</span>
+                  <span class="character-chip">HIGH AGILITY</span>
+                </div>
+                <div class="character-gallery-desc">
+                  Advanced military android featuring reinforced carbon-fiber limbs, tactical chassis, and superior maneuverability.
+                </div>
+                <button class="character-select-btn">Select Operative</button>
+              </div>
+            </div>
+
+            <!-- 4. Titan Mech -->
+            <div class="character-gallery-card" data-character="heavy">
+              <div class="character-gallery-thumb-wrap">
+                <img src="/assets/images/characters/heavy.jpg" class="character-gallery-thumb" alt="Titan Mech">
+                <div class="character-selected-badge">✓ ACTIVE</div>
+              </div>
+              <div class="character-gallery-body">
+                <div class="character-gallery-title">Titan Mech</div>
+                <div class="character-role-tag">Heavy Juggernaut</div>
+                <div class="character-stat-chips">
+                  <span class="character-chip">SPEED: 95%</span>
+                  <span class="character-chip">ARMOR: 115%</span>
+                  <span class="character-chip">TITANIUM PLATES</span>
+                </div>
+                <div class="character-gallery-desc">
+                  Reinforced heavy armored exoskeleton equipped with thick shoulder pauldrons, glowing chest reactor, and high durability.
+                </div>
+                <button class="character-select-btn">Select Operative</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       2. WAITING ROOM / LOBBY OVERLAY
+       ========================================== -->
+  <div id="screen-waiting" class="overlay-screen hidden">
+    <div class="waiting-room-card">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h2 id="waiting-room-title" style="font-size: 24px; color: var(--primary);">Room Name</h2>
+          <div id="waiting-settings-summary" style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">
+            Map: WAREHOUSE | Gravity: NORMAL | Score Limit: 15 Kills
+          </div>
+        </div>
+        <button id="btn-leave-room" class="btn btn-danger" style="padding: 8px 16px; font-size: 11px;">LEAVE</button>
+      </div>
+
+      <!-- Host Map Quick Changer (visible to Host) -->
+      <div id="host-map-control" style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);">
+        <label style="font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase;">Host: Change Arena Map</label>
+        <div class="map-grid" id="waiting-map-selector" style="margin-top: 8px;">
+          <div class="map-card" data-map="dust2">
+            <img src="/assets/images/maps/dust2.jpg" class="waiting-map-thumb" alt="Dust II">
+            <div class="map-title">Dust II</div>
+          </div>
+          <div class="map-card" data-map="stalkyard">
+            <img src="/assets/images/maps/stalkyard.jpg" class="waiting-map-thumb" alt="Stalkyard">
+            <div class="map-title">Stalkyard</div>
+          </div>
+          <div class="map-card" data-map="turbine">
+            <img src="/assets/images/maps/turbine.jpg" class="waiting-map-thumb" alt="Turbine">
+            <div class="map-title">Turbine</div>
+          </div>
+          <div class="map-card" data-map="frenzy">
+            <img src="/assets/images/maps/frenzy.jpg" class="waiting-map-thumb" alt="Frenzy">
+            <div class="map-title">Frenzy</div>
+          </div>
+          <div class="map-card" data-map="italy">
+            <img src="/assets/images/maps/italy.jpg" class="waiting-map-thumb" alt="Italy">
+            <div class="map-title">Italy</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title" style="margin-bottom: 8px;">👥 Connected Operatives</div>
+        <div id="waiting-player-list" class="player-list"></div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 10px;">
+        <div id="waiting-host-status" style="font-size: 13px; color: var(--accent); font-weight: 600;">
+          Waiting for host to start match...
+        </div>
+        <button id="btn-start-match" class="btn btn-success" style="display: none; width: 100%; max-width: 260px;">
+          START MATCH
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       3. IN-GAME PAUSE MENU OVERLAY (ESC KEY)
+       ========================================== -->
+  <div id="pause-menu-screen" class="overlay-screen hidden">
+    <div class="pause-menu-card">
+      <div class="pause-header">
+        <div class="pause-title">⏸️ TACTICAL PAUSE</div>
+        <div id="pause-room-info" class="pause-meta">ROOM: DUST ARENA | MAP: WAREHOUSE</div>
+      </div>
+
+      <div class="pause-actions">
+        <button id="btn-pause-resume" class="btn btn-primary" style="width: 100%;">
+          ▶️ RESUME GAME
+        </button>
+
+        <button id="btn-pause-rematch" class="btn btn-accent" style="width: 100%;">
+          🔄 REMATCH (RESTART MATCH)
+        </button>
+
+        <button id="btn-pause-finish" class="btn btn-warning" style="width: 100%;">
+          ⏹️ FINISH MATCH (END GAME)
+        </button>
+
+        <button id="btn-pause-leave" class="btn btn-danger" style="width: 100%;">
+          🚪 LEAVE MATCH
+        </button>
+      </div>
+
+      <!-- Controls Guide -->
+      <div class="controls-guide">
+        <div class="guide-item"><span class="guide-key">W A S D</span><br>Tactical Movement</div>
+        <div class="guide-item"><span class="guide-key">MOUSE</span><br>Aim / Fire</div>
+        <div class="guide-item"><span class="guide-key">SPACE / SHIFT</span><br>Jump / Sprint</div>
+        <div class="guide-item"><span class="guide-key">R / TAB</span><br>Reload / Score</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       4. IN-GAME HUD
+       ========================================== -->
+  <div id="game-hud">
+    <!-- Flashbang Fullscreen Blindness Overlay -->
+    <div id="flashbang-overlay"></div>
+
+    <!-- Sniper Rifle Telescopic Scope Overlay -->
+    <div id="sniper-scope-overlay" class="hidden">
+      <div class="scope-lens">
+        <div class="scope-cross-h"></div>
+        <div class="scope-cross-v"></div>
+        <div class="scope-circle"></div>
+        <div class="scope-mildot md-1"></div>
+        <div class="scope-mildot md-2"></div>
+        <div class="scope-mildot md-3"></div>
+        <div class="scope-mildot md-4"></div>
+      </div>
+    </div>
+
+    <!-- Screen Edge Damage Vignette -->
+    <div id="damage-vignette"></div>
+
+    <!-- LAN Stats Pill -->
+    <div class="lan-stats">
+      <span id="hud-ping">LAN Ping: --ms</span>
+      <span id="hud-fps">-- FPS</span>
+    </div>
+
+    <!-- Dynamic Crosshair & Hitmarker -->
+    <div id="crosshair">
+      <div class="crosshair-line ch-top"></div>
+      <div class="crosshair-line ch-bottom"></div>
+      <div class="crosshair-line ch-left"></div>
+      <div class="crosshair-line ch-right"></div>
+      <div class="crosshair-line ch-dot"></div>
+    </div>
+
+    <div id="hitmarker">
+      <div class="hm-tick hm-1"></div>
+      <div class="hm-tick hm-2"></div>
+      <div class="hm-tick hm-3"></div>
+      <div class="hm-tick hm-4"></div>
+    </div>
+
+    <!-- Top Objective & Score -->
+    <div class="hud-top-bar">
+      <span id="hud-map-badge" class="gravity-badge" style="border-color:#f59e0b; color:#f59e0b;">WAREHOUSE</span>
+      <span id="hud-match-score" class="match-score-badge">TACTICAL MATCH</span>
+      <span id="hud-gravity-badge" class="gravity-badge">STANDARD</span>
+    </div>
+
+    <!-- Kill Feed -->
+    <div id="kill-feed"></div>
+
+    <!-- Bottom Center: Tactical Weapon Loadout Bar -->
+    <div id="weapon-loadout-bar">
+      <div class="loadout-slot active" data-slot="1">
+        <span class="slot-key">1</span>
+        <span class="slot-icon">🔫</span>
+        <span class="slot-name">Auto AR</span>
+      </div>
+      <div class="loadout-slot" data-slot="2">
+        <span class="slot-key">2</span>
+        <span class="slot-icon">🎯</span>
+        <span class="slot-name">Semi DMR</span>
+      </div>
+      <div class="loadout-slot" data-slot="3">
+        <span class="slot-key">3</span>
+        <span class="slot-icon">🔭</span>
+        <span class="slot-name">Sniper</span>
+      </div>
+      <div class="loadout-slot" data-slot="4">
+        <span class="slot-key">4</span>
+        <span class="slot-icon">🔪</span>
+        <span class="slot-name">Knife</span>
+      </div>
+      <div class="loadout-divider"></div>
+      <div class="loadout-slot throwable-slot" id="frag-count-slot">
+        <span class="slot-key">G</span>
+        <span class="slot-icon">💣</span>
+        <span class="slot-count" id="hud-frag-count">2</span>
+      </div>
+      <div class="loadout-slot throwable-slot" id="flash-count-slot">
+        <span class="slot-key">F</span>
+        <span class="slot-icon">⚡</span>
+        <span class="slot-count" id="hud-flash-count">2</span>
+      </div>
+    </div>
+
+    <!-- Bottom Left: Health -->
+    <div class="hud-health-wrap">
+      <div id="hud-health-val" class="health-number-box">100</div>
+      <div class="health-bar-container">
+        <div class="health-label">HEALTH</div>
+        <div class="health-bar-bg">
+          <div id="hud-health-bar" class="health-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Right: Ammo -->
+    <div class="hud-ammo-wrap">
+      <div id="hud-reload-prompt" class="reload-prompt">PRESS [R] TO RELOAD</div>
+      <div id="hud-ammo-val" class="ammo-numbers">30 <span>/ ∞</span></div>
+      <div id="hud-weapon-name" class="weapon-label">ASSAULT RIFLE - 5.56MM</div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       5. RESPAWN SCREEN
+       ========================================== -->
+  <div id="respawn-screen">
+    <div class="respawn-title">TACTICAL CASUALTY</div>
+    <div id="respawn-killer-text" class="respawn-killer-text">Eliminated</div>
+    <div style="font-size: 14px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase;">Respawning in</div>
+    <div id="respawn-count" class="respawn-timer-count">3</div>
+  </div>
+
+  <!-- ==========================================
+       6. SCOREBOARD MODAL (HOLD TAB)
+       ========================================== -->
+  <div id="scoreboard-modal">
+    <div class="section-title">📊 MATCH SCOREBOARD</div>
+    <table class="scoreboard-table">
+      <thead>
+        <tr>
+          <th>OPERATIVE</th>
+          <th>CLASS</th>
+          <th>KILLS</th>
+          <th>DEATHS</th>
+          <th>STATUS</th>
+        </tr>
+      </thead>
+      <tbody id="scoreboard-body">
+        <!-- Rendered dynamically -->
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ==========================================
+       7. MATCH END / VICTORY MODAL
+       ========================================== -->
+  <div id="match-end-modal" class="overlay-screen hidden">
+    <div class="match-end-card">
+      <div class="winner-crown">🏆</div>
+      <div id="winner-title" class="winner-title">PLAYER WINS!</div>
+      <div id="winner-sub" class="winner-sub">Score limit reached. Mission completed.</div>
+
+      <!-- MVP Showcase Badge -->
+      <div id="mvp-badge-container" class="mvp-badge-wrap">
+        <span class="mvp-star">⭐ MVP OPERATIVE:</span>
+        <span id="mvp-name" class="mvp-name">Soldier</span>
+        <span id="mvp-stat" class="mvp-stat">(15 Kills - K/D: 3.0)</span>
+      </div>
+
+      <!-- Final Match Leaderboard Table -->
+      <div style="margin: 16px 0; max-height: 220px; overflow-y: auto;">
+        <table class="scoreboard-table">
+          <thead>
+            <tr>
+              <th>RANK</th>
+              <th>OPERATIVE</th>
+              <th>CLASS</th>
+              <th>KILLS</th>
+              <th>DEATHS</th>
+              <th>K/D</th>
+            </tr>
+          </thead>
+          <tbody id="final-scoreboard-body">
+            <!-- Populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Match End Actions -->
+      <div class="match-end-actions">
+        <button id="btn-end-rematch" class="btn btn-accent" style="flex: 1;">
+          🔄 REMATCH
+        </button>
+        <button id="btn-end-room-lobby" class="btn btn-secondary" style="flex: 1;">
+          ⚙️ RETURN TO LOBBY
+        </button>
+        <button id="btn-end-leave" class="btn btn-danger" style="flex: 1;">
+          🚪 LEAVE ROOM
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Bootstrap -->
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>

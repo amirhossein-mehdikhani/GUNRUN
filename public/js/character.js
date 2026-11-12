@@ -1,0 +1,460 @@
+// character.js - Multi-Character 3D Engine: Soldier, Robot, Cyborg & Heavy Titan Mech
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+
+const gltfCache = {
+  soldier: null,
+  robot: null,
+  cyborg: null
+};
+
+let preloadPromise = null;
+
+// Preload all available GLTF models in background
+export function preloadCharacterModel() {
+  if (preloadPromise) return preloadPromise;
+
+  const loader = new GLTFLoader();
+  const models = [
+    { type: 'soldier', path: '/assets/models/Soldier.glb' },
+    { type: 'robot', path: '/assets/models/RobotExpressive.glb' },
+    { type: 'cyborg', path: '/assets/models/Xbot.glb' }
+  ];
+
+  preloadPromise = Promise.all(
+    models.map(m => new Promise((resolve) => {
+      loader.load(
+        m.path,
+        (gltf) => {
+          console.log(`[CharacterLoader] Loaded ${m.type} (${m.path})`);
+          gltfCache[m.type] = gltf;
+          resolve(gltf);
+        },
+        undefined,
+        (err) => {
+          console.warn(`[CharacterLoader] ${m.type} failed to load, procedural fallback ready:`, err.message);
+          resolve(null);
+        }
+      );
+    }))
+  );
+
+  return preloadPromise;
+}
+
+export class RemotePlayer {
+  constructor(scene, playerData) {
+    this.scene = scene;
+    this.id = playerData.id;
+    this.name = playerData.name || 'Soldier';
+    this.color = playerData.color || '#3b82f6';
+    this.characterType = playerData.characterType || 'soldier'; // 'soldier' | 'robot' | 'cyborg' | 'heavy'
+    this.health = playerData.health ?? 100;
+    this.isAlive = playerData.isAlive ?? true;
+
+    this.group = new THREE.Group();
+    this.hitboxes = [];
+    this.isUsingGltf = false;
+
+    // Procedural animation state
+    this.walkAnimTime = 0;
+    this.isMoving = false;
+    this.isRunning = false;
+
+    // Overhead UI
+    this.overheadCanvas = null;
+    this.overheadTexture = null;
+    this.overheadSprite = null;
+
+    this.initModel();
+    this.buildOverheadUI();
+
+    this.group.position.set(playerData.position.x, playerData.position.y, playerData.position.z);
+    this.scene.add(this.group);
+  }
+
+  async initModel() {
+    await preloadCharacterModel();
+
+    if (this.characterType !== 'heavy' && gltfCache[this.characterType]) {
+      try {
+        this.setupGltfModel(gltfCache[this.characterType]);
+        return;
+      } catch (err) {
+        console.warn(`[Character] Error setting up GLTF for ${this.characterType}, using procedural:`, err);
+      }
+    }
+
+    // High detail procedural fallback based on character type
+    this.buildProceduralModel();
+  }
+
+  setupGltfModel(gltf) {
+    const clonedModel = SkeletonUtils.clone(gltf.scene);
+
+    if (this.characterType === 'robot') {
+      clonedModel.scale.set(0.38, 0.38, 0.38);
+      clonedModel.position.set(0, -1.6, 0);
+      clonedModel.rotation.y = Math.PI;
+    } else if (this.characterType === 'cyborg') {
+      clonedModel.scale.set(0.01, 0.01, 0.01);
+      clonedModel.position.set(0, -1.6, 0);
+      clonedModel.rotation.y = Math.PI;
+    } else {
+      // Soldier
+      clonedModel.scale.set(1.0, 1.0, 1.0);
+      clonedModel.position.set(0, -1.6, 0);
+      clonedModel.rotation.y = Math.PI;
+    }
+
+    // Apply team color accent and shadow flags
+    const teamColor = new THREE.Color(this.color);
+    clonedModel.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        child.userData = { playerId: this.id, isHead: false };
+        this.hitboxes.push(child);
+
+        // Highlight with player team color
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material = child.material.map(m => m.clone());
+          } else {
+            child.material = child.material.clone();
+          }
+        }
+      }
+    });
+
+    this.mixer = new THREE.AnimationMixer(clonedModel);
+    this.animations = {};
+    if (gltf.animations) {
+      gltf.animations.forEach((clip) => {
+        this.animations[clip.name] = this.mixer.clipAction(clip);
+      });
+    }
+
+    // Pick suitable default animation
+    const idleClip = this.animations['Idle'] || this.animations['idle'] || Object.values(this.animations)[0];
+    if (idleClip) {
+      this.currentAction = idleClip;
+      this.currentAction.play();
+    }
+
+    this.gltfRoot = clonedModel;
+    this.group.add(clonedModel);
+    this.isUsingGltf = true;
+    this.setupHitboxVolumes();
+  }
+
+  buildProceduralModel() {
+    const armorColor = new THREE.Color(this.color);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x1f2937,
+      roughness: 0.4,
+      metalness: 0.6
+    });
+
+    const armorMat = new THREE.MeshStandardMaterial({
+      color: armorColor,
+      roughness: 0.3,
+      metalness: 0.5
+    });
+
+    const visorMat = new THREE.MeshBasicMaterial({
+      color: this.characterType === 'cyborg' ? 0xff2244 : 0x00f0ff
+    });
+
+    const gunMat = new THREE.MeshStandardMaterial({
+      color: 0x111827,
+      roughness: 0.3,
+      metalness: 0.8
+    });
+
+    const isHeavy = this.characterType === 'heavy';
+    const isRobot = this.characterType === 'robot';
+
+    // 1. Torso
+    const torsoW = isHeavy ? 0.8 : 0.55;
+    const torsoH = isHeavy ? 0.75 : 0.65;
+    const torsoD = isHeavy ? 0.45 : 0.32;
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoW, torsoH, torsoD), bodyMat);
+    torso.position.set(0, 0, 0);
+    torso.castShadow = true;
+    this.group.add(torso);
+
+    // Armor chestplate
+    const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(torsoW * 1.05, torsoH * 0.7, torsoD * 1.1), armorMat);
+    chestPlate.position.set(0, 0.05, 0.02);
+    torso.add(chestPlate);
+
+    // Glowing core reactor
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(isHeavy ? 0.12 : 0.08, isHeavy ? 0.12 : 0.08, 0.08, 16), visorMat);
+    core.rotation.x = Math.PI / 2;
+    core.position.set(0, 0.05, torsoD / 2 + 0.02);
+    torso.add(core);
+
+    // 2. Heavy Shoulder Pauldrons (for Heavy Titan Mech)
+    if (isHeavy) {
+      const pauldronMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.3, metalness: 0.7 });
+      const leftPauldron = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.3, 0.45), pauldronMat);
+      leftPauldron.position.set(-0.55, 0.3, 0);
+      leftPauldron.rotation.z = -0.2;
+      this.group.add(leftPauldron);
+
+      const rightPauldron = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.3, 0.45), pauldronMat);
+      rightPauldron.position.set(0.55, 0.3, 0);
+      rightPauldron.rotation.z = 0.2;
+      this.group.add(rightPauldron);
+    }
+
+    // 3. Head & Helmet / Visor
+    this.headGroup = new THREE.Group();
+    this.headGroup.position.set(0, isHeavy ? 0.6 : 0.55, 0);
+
+    const headGeo = isRobot
+      ? new THREE.CylinderGeometry(0.18, 0.18, 0.32, 12)
+      : new THREE.BoxGeometry(isHeavy ? 0.42 : 0.36, 0.38, 0.4);
+    const helmet = new THREE.Mesh(headGeo, armorMat);
+    helmet.castShadow = true;
+    this.headGroup.add(helmet);
+
+    // Visor / Cyber eyes
+    if (isRobot) {
+      const eye1 = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), visorMat);
+      eye1.position.set(-0.07, 0.05, 0.18);
+      const eye2 = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), visorMat);
+      eye2.position.set(0.07, 0.05, 0.18);
+      const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.2, 6), gunMat);
+      antenna.position.set(0.14, 0.25, 0);
+      this.headGroup.add(eye1, eye2, antenna);
+    } else {
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(isHeavy ? 0.36 : 0.32, 0.12, 0.06), visorMat);
+      visor.position.set(0, 0.02, 0.2);
+      this.headGroup.add(visor);
+    }
+
+    this.group.add(this.headGroup);
+
+    // 4. Legs
+    const legW = isHeavy ? 0.24 : 0.18;
+    const legH = isHeavy ? 0.8 : 0.75;
+    const legSpread = isHeavy ? 0.24 : 0.18;
+
+    this.leftLeg = new THREE.Group();
+    this.leftLeg.position.set(-legSpread, -0.35, 0);
+    const lLegMesh = new THREE.Mesh(new THREE.BoxGeometry(legW, legH, 0.22), bodyMat);
+    lLegMesh.position.set(0, -legH / 2, 0);
+    lLegMesh.castShadow = true;
+    this.leftLeg.add(lLegMesh);
+    this.group.add(this.leftLeg);
+
+    this.rightLeg = new THREE.Group();
+    this.rightLeg.position.set(legSpread, -0.35, 0);
+    const rLegMesh = new THREE.Mesh(new THREE.BoxGeometry(legW, legH, 0.22), bodyMat);
+    rLegMesh.position.set(0, -legH / 2, 0);
+    rLegMesh.castShadow = true;
+    this.rightLeg.add(rLegMesh);
+    this.group.add(this.rightLeg);
+
+    // 5. Arms & Carbine
+    this.leftArm = new THREE.Group();
+    this.leftArm.position.set(isHeavy ? -0.48 : -0.35, 0.25, 0);
+    const lArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.55, 0.16), armorMat);
+    lArmMesh.position.set(0, -0.25, 0);
+    lArmMesh.castShadow = true;
+    this.leftArm.add(lArmMesh);
+    this.group.add(this.leftArm);
+
+    this.rightArm = new THREE.Group();
+    this.rightArm.position.set(isHeavy ? 0.48 : 0.35, 0.25, 0);
+    const rArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.55, 0.16), armorMat);
+    rArmMesh.position.set(0, -0.25, 0);
+    rArmMesh.castShadow = true;
+    this.rightArm.add(rArmMesh);
+    this.group.add(this.rightArm);
+
+    // Rifle
+    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.8), gunMat);
+    rifle.position.set(0.15, -0.05, 0.45);
+    rifle.castShadow = true;
+    this.group.add(rifle);
+    this.proceduralWeapon = rifle;
+
+    this.setupHitboxVolumes();
+  }
+
+  setWeaponSlot(slot) {
+    this.activeSlot = slot;
+    if (this.proceduralWeapon) {
+      if (slot === 4) {
+        // Knife
+        this.proceduralWeapon.scale.set(0.3, 0.4, 0.35);
+        this.proceduralWeapon.position.set(0.2, -0.1, 0.25);
+      } else if (slot === 3) {
+        // Sniper
+        this.proceduralWeapon.scale.set(0.9, 0.9, 1.4);
+        this.proceduralWeapon.position.set(0.15, -0.05, 0.55);
+      } else if (slot === 2) {
+        // DMR Pistol
+        this.proceduralWeapon.scale.set(0.7, 0.7, 0.65);
+        this.proceduralWeapon.position.set(0.15, -0.05, 0.35);
+      } else {
+        // AR
+        this.proceduralWeapon.scale.set(1.0, 1.0, 1.0);
+        this.proceduralWeapon.position.set(0.15, -0.05, 0.45);
+      }
+    }
+  }
+
+  setupHitboxVolumes() {
+    this.hitboxes = [];
+
+    // Body hitbox (cylinder)
+    const bodyBox = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.45, 1.25, 8),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    bodyBox.position.set(0, -0.2, 0);
+    bodyBox.userData = { playerId: this.id, isHead: false };
+    this.group.add(bodyBox);
+    this.hitboxes.push(bodyBox);
+
+    // Head hitbox (precision sphere)
+    const headBox = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 8, 8),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    headBox.position.set(0, 0.55, 0);
+    headBox.userData = { playerId: this.id, isHead: true };
+    this.group.add(headBox);
+    this.hitboxes.push(headBox);
+  }
+
+  buildOverheadUI() {
+    this.overheadCanvas = document.createElement('canvas');
+    this.overheadCanvas.width = 256;
+    this.overheadCanvas.height = 64;
+    this.overheadCtx = this.overheadCanvas.getContext('2d');
+
+    this.overheadTexture = new THREE.CanvasTexture(this.overheadCanvas);
+    const spriteMat = new THREE.SpriteMaterial({
+      map: this.overheadTexture,
+      transparent: true,
+      depthTest: false
+    });
+
+    this.overheadSprite = new THREE.Sprite(spriteMat);
+    this.overheadSprite.scale.set(1.8, 0.45, 1);
+    this.overheadSprite.position.set(0, 1.25, 0);
+    this.group.add(this.overheadSprite);
+
+    this.updateOverheadUI();
+  }
+
+  updateOverheadUI() {
+    if (!this.overheadCtx) return;
+    const ctx = this.overheadCtx;
+    const w = this.overheadCanvas.width;
+    const h = this.overheadCanvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Background pill
+    ctx.fillStyle = 'rgba(10, 14, 22, 0.75)';
+    ctx.beginPath();
+    ctx.roundRect(8, 4, w - 16, h - 8, 8);
+    ctx.fill();
+
+    // Nickname & character badge
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${this.name}`, w / 2, 25);
+
+    // Health Bar
+    const barW = w - 40;
+    const barH = 10;
+    const barX = 20;
+    const barY = 36;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(barX, barY, barW, barH);
+
+    const healthPercent = Math.max(0, Math.min(100, this.health)) / 100;
+    let fillCol = '#10b981';
+    if (healthPercent < 0.3) fillCol = '#ef4444';
+    else if (healthPercent < 0.6) fillCol = '#f59e0b';
+
+    ctx.fillStyle = fillCol;
+    ctx.fillRect(barX, barY, barW * healthPercent, barH);
+
+    this.overheadTexture.needsUpdate = true;
+  }
+
+  setHealth(hp) {
+    this.health = hp;
+    this.updateOverheadUI();
+    if (this.health <= 0) {
+      this.isAlive = false;
+      this.group.visible = false;
+    } else {
+      this.isAlive = true;
+      this.group.visible = true;
+    }
+  }
+
+  setTransform(pos, rot, isMoving, isRunning) {
+    this.targetPos = pos;
+    this.targetRot = rot;
+    this.isMoving = isMoving;
+    this.isRunning = isRunning;
+  }
+
+  update(delta) {
+    if (this.targetPos) {
+      this.group.position.lerp(this.targetPos, Math.min(1.0, delta * 20));
+    }
+    if (this.targetRot) {
+      this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, this.targetRot.yaw, Math.min(1.0, delta * 20));
+    }
+
+    // GLTF animation update
+    if (this.isUsingGltf && this.mixer) {
+      this.mixer.update(delta);
+      const actionName = this.isMoving ? (this.isRunning ? 'Run' : 'Walk') : 'Idle';
+      if (this.animations && this.animations[actionName] && this.currentAction !== this.animations[actionName]) {
+        if (this.currentAction) this.currentAction.fadeOut(0.2);
+        this.currentAction = this.animations[actionName];
+        this.currentAction.reset().fadeIn(0.2).play();
+      }
+    }
+
+    // Procedural walk animation
+    if (!this.isUsingGltf && this.leftLeg && this.rightLeg) {
+      if (this.isMoving) {
+        const speed = this.isRunning ? 14 : 9;
+        this.walkAnimTime += delta * speed;
+        const swing = Math.sin(this.walkAnimTime) * 0.6;
+
+        this.leftLeg.rotation.x = swing;
+        this.rightLeg.rotation.x = -swing;
+
+        if (this.leftArm) this.leftArm.rotation.x = -swing * 0.5;
+        if (this.rightArm) this.rightArm.rotation.x = swing * 0.2;
+      } else {
+        this.leftLeg.rotation.x = 0;
+        this.rightLeg.rotation.x = 0;
+        if (this.leftArm) this.leftArm.rotation.x = 0;
+        if (this.rightArm) this.rightArm.rotation.x = 0;
+      }
+    }
+  }
+
+  destroy() {
+    this.scene.remove(this.group);
+    if (this.overheadTexture) this.overheadTexture.dispose();
+  }
+}
