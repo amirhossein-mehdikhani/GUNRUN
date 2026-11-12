@@ -17,6 +17,11 @@ const _segW = new THREE.Vector3();
 const _qPt = new THREE.Vector3();
 const _pushH = new THREE.Vector3();
 const _downDir = new THREE.Vector3(0, -1, 0);
+const _projMove = new THREE.Vector3();
+const _projDir = new THREE.Vector3();
+const _projRay = new THREE.Ray();
+const _projSphere = new THREE.Sphere();
+const _projBestNormal = new THREE.Vector3();
 
 function closestPointsLineToLine(l1Start, l1End, l2Start, l2End, out1, out2) {
   _segDir1.subVectors(l1End, l1Start);
@@ -816,6 +821,96 @@ export class ArenaMap {
   hasFloorBelow(x, feetY, z) {
     if (!this.octree) return false;
     return this._raycastHighestFloorAt(x, feetY + 0.9, z, feetY + 0.55, 60.0) !== null;
+  }
+
+  // Checks if an AABB intersects arena colliders or map octree triangles
+  testCollision(box) {
+    for (let i = 0; i < this.colliders.length; i++) {
+      if (this.colliders[i].intersectsBox(box)) return true;
+    }
+    if (this.octree) {
+      const center = box.getCenter(_pt1);
+      const size = box.getSize(_pt2);
+      _projSphere.set(center, size.length() * 0.5);
+      return !!this.octree.sphereIntersect(_projSphere);
+    }
+    return false;
+  }
+
+  // Resolves one swept projectile step against double-sided Octree triangles and AABB colliders
+  resolveProjectileStep(prevPos, nextPos, radius = 0.14) {
+    _projMove.subVectors(nextPos, prevPos);
+    const stepLen = _projMove.length();
+    if (stepLen < 1e-6) return null;
+
+    if (this.octree) {
+      _projDir.copy(_projMove).divideScalar(stepLen);
+      _projRay.set(prevPos, _projDir);
+      const tris = [];
+      this.octree.getRayTriangles(_projRay, tris);
+
+      let closestDist = stepLen + radius;
+      let hit = false;
+      let hitPointX = 0;
+      let hitPointY = 0;
+      let hitPointZ = 0;
+
+      for (let i = 0; i < tris.length; i++) {
+        const tri = tris[i];
+        const pt = _projRay.intersectTriangle(tri.a, tri.b, tri.c, false, _hitPt);
+        if (!pt) continue;
+        const d = prevPos.distanceTo(pt);
+        if (d <= closestDist) {
+          tri.getNormal(_triNormal);
+          if (_triNormal.lengthSq() < 1e-8) continue;
+          if (_triNormal.dot(_projDir) > 0) _triNormal.negate();
+          closestDist = d;
+          hit = true;
+          hitPointX = pt.x;
+          hitPointY = pt.y;
+          hitPointZ = pt.z;
+          _projBestNormal.copy(_triNormal);
+        }
+      }
+
+      if (hit) {
+        return {
+          position: new THREE.Vector3(hitPointX, hitPointY, hitPointZ).addScaledVector(_projBestNormal, radius + 0.01),
+          normal: _projBestNormal.clone()
+        };
+      }
+
+      // Grazing / edge sphere fallback
+      _projSphere.set(nextPos, radius);
+      const res = this.octree.sphereIntersect(_projSphere);
+      if (res && res.depth > 0) {
+        _projBestNormal.copy(res.normal);
+        if (_projBestNormal.dot(_projMove) > 0) _projBestNormal.negate();
+        return {
+          position: nextPos.clone().addScaledVector(_projBestNormal, res.depth + 0.01),
+          normal: _projBestNormal.clone()
+        };
+      }
+    }
+
+    // Fallback to AABB colliders if octree is absent
+    const minX = nextPos.x - radius;
+    const minY = nextPos.y - radius;
+    const minZ = nextPos.z - radius;
+    const maxX = nextPos.x + radius;
+    const maxY = nextPos.y + radius;
+    const maxZ = nextPos.z + radius;
+    for (let i = 0; i < this.colliders.length; i++) {
+      const b = this.colliders[i];
+      if (maxX >= b.min.x && minX <= b.max.x && maxY >= b.min.y && minY <= b.max.y && maxZ >= b.min.z && minZ <= b.max.z) {
+        return {
+          position: prevPos.clone(),
+          normal: new THREE.Vector3(0, 1, 0)
+        };
+      }
+    }
+
+    return null;
   }
 
   // Checks if player has left valid map bounds or fallen beneath the arena

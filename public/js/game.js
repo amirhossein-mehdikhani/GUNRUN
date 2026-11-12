@@ -291,7 +291,8 @@ class GameApp {
         case 'ShiftLeft':
         case 'ShiftRight': this.moveInput.sprint = true; break;
         case 'Space':
-          if (this.isAlive && this.controls.isLocked) {
+          if (this.state === 'playing' && this.isAlive && this.controls.isLocked) {
+            e.preventDefault();
             this.jumpRequested = true;
             this.jumpRequestTimer = 0.2; // 200ms jump buffer
             if (this.isGrounded) {
@@ -313,8 +314,14 @@ class GameApp {
         case 'Digit2': this.switchWeaponSlot(2); break;
         case 'Digit3': this.switchWeaponSlot(3); break;
         case 'Digit4': this.switchWeaponSlot(4); break;
-        case 'KeyG': this.throwFragGrenade(); break;
-        case 'KeyF': this.throwFlashbang(); break;
+        case 'KeyG':
+          if (this.state === 'playing' && this.controls.isLocked) e.preventDefault();
+          this.throwFragGrenade();
+          break;
+        case 'KeyF':
+          if (this.state === 'playing' && this.controls.isLocked) e.preventDefault();
+          this.throwFlashbang();
+          break;
         case 'Tab':
           e.preventDefault();
           this.scoreboardModal.classList.add('visible');
@@ -368,67 +375,72 @@ class GameApp {
     this.socket.emit('weapon-switch', { slot: slotIndex });
   }
 
-  throwFragGrenade() {
-    if (this.fragCount <= 0 || !this.isAlive || !this.controls.isLocked) return;
+  /** Throws a frag grenade or flashbang cleanly from ground or mid-air jump. */
+  _throwTactical(type) {
+    if (this.state !== 'playing' || !this.isAlive || !this.controls.isLocked || !this.projectiles) return;
 
-    this.fragCount--;
+    const isFrag = type === 'frag';
+    if (isFrag) {
+      if (this.fragCount <= 0) return;
+      this.fragCount--;
+    } else {
+      if (this.flashCount <= 0) return;
+      this.flashCount--;
+    }
     this.updateThrowableHud();
 
     const camDir = new THREE.Vector3();
     this.camera.getWorldDirection(camDir);
 
-    const spawnPos = this.camera.position.clone().addScaledVector(camDir, 0.6);
-    const velocity = camDir.clone().multiplyScalar(22).add(new THREE.Vector3(0, 3.5, 0));
-    const projId = 'frag_' + Math.random().toString(36).substring(2, 9);
+    // Keep spawn point outside walls/ceilings even when throwing during a jump
+    let spawnPos = this.camera.position.clone().addScaledVector(camDir, 0.55);
+    if (this.arenaMap.resolveProjectileStep) {
+      const blocked = this.arenaMap.resolveProjectileStep(this.camera.position, spawnPos, 0.14);
+      if (blocked) {
+        spawnPos.copy(blocked.position);
+      }
+    }
 
-    // Spawn locally
-    this.projectiles.spawnProjectile('frag', spawnPos, velocity, true, projId, (detonatePos) => {
-      this.socket.emit('grenade-explode', {
-        explosionPoint: { x: detonatePos.x, y: detonatePos.y, z: detonatePos.z },
-        throwerId: this.localPlayerId
-      });
+    const throwSpeed = isFrag ? 22 : 24;
+    const upBoost = isFrag ? 3.5 : 3.2;
+    const velocity = camDir.clone().multiplyScalar(throwSpeed).add(new THREE.Vector3(0, upBoost, 0));
+
+    // Inherit upward jump momentum when throwing in mid-air
+    if (!this.isGrounded && this.playerVelocity.y > 0) {
+      velocity.y += this.playerVelocity.y * 0.45;
+    }
+
+    const projId = `${type}_` + Math.random().toString(36).substring(2, 9);
+
+    this.projectiles.spawnProjectile(type, spawnPos, velocity, true, projId, (detonatePos) => {
+      if (isFrag) {
+        this.socket.emit('grenade-explode', {
+          explosionPoint: { x: detonatePos.x, y: detonatePos.y, z: detonatePos.z },
+          throwerId: this.localPlayerId
+        });
+      } else {
+        this.socket.emit('flash-detonate', {
+          position: { x: detonatePos.x, y: detonatePos.y, z: detonatePos.z }
+        });
+      }
     });
 
-    // Broadcast throw event over LAN
     this.socket.emit('throw-projectile', {
       id: projId,
-      type: 'frag',
+      type: type,
       origin: { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z },
       velocity: { x: velocity.x, y: velocity.y, z: velocity.z }
     });
 
-    this.addFeedItem('💣 Frag grenade thrown!');
+    this.addFeedItem(isFrag ? '💣 Frag grenade thrown!' : '⚡ Flashbang deployed!');
+  }
+
+  throwFragGrenade() {
+    this._throwTactical('frag');
   }
 
   throwFlashbang() {
-    if (this.flashCount <= 0 || !this.isAlive || !this.controls.isLocked) return;
-
-    this.flashCount--;
-    this.updateThrowableHud();
-
-    const camDir = new THREE.Vector3();
-    this.camera.getWorldDirection(camDir);
-
-    const spawnPos = this.camera.position.clone().addScaledVector(camDir, 0.6);
-    const velocity = camDir.clone().multiplyScalar(24).add(new THREE.Vector3(0, 3.2, 0));
-    const projId = 'flash_' + Math.random().toString(36).substring(2, 9);
-
-    // Spawn locally
-    this.projectiles.spawnProjectile('flash', spawnPos, velocity, true, projId, (detonatePos) => {
-      this.socket.emit('flash-detonate', {
-        position: { x: detonatePos.x, y: detonatePos.y, z: detonatePos.z }
-      });
-    });
-
-    // Broadcast throw event over LAN
-    this.socket.emit('throw-projectile', {
-      id: projId,
-      type: 'flash',
-      origin: { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z },
-      velocity: { x: velocity.x, y: velocity.y, z: velocity.z }
-    });
-
-    this.addFeedItem('⚡ Flashbang deployed!');
+    this._throwTactical('flash');
   }
 
   updateThrowableHud() {
@@ -1646,7 +1658,7 @@ class GameApp {
   updatePhysics(delta) {
     // Update tactical thrown projectiles & explosion effects
     if (this.projectiles) {
-      this.projectiles.update(delta);
+      this.projectiles.update(delta, this.gravity || 22.0);
     }
 
     if (!this.controls.isLocked || !this.isAlive) return;
