@@ -217,59 +217,92 @@ function getLanIpAddresses() {
 // ==========================================
 const rooms = new Map();
 
-// Map-specific arena spawn points (8 verified walkable raycasted spawns per authentic 3D GLB map)
+// Map-specific arena spawn points (8 Octree-verified open & mutually reachable spawns per GLB map)
 const MAP_SPAWNS = {
   dust2: [
-    { x: 34.0, y: 9.28, z: -40.0 },  // CT Spawn
-    { x: -56.0, y: 7.57, z: -64.0 }, // T Spawn
-    { x: 22.0, y: 6.72, z: 32.0 },   // Bombsite A
-    { x: -50.0, y: 10.13, z: 44.0 }, // Bombsite B
-    { x: 28.0, y: 6.72, z: 2.0 },    // Long A
-    { x: -8.0, y: 10.13, z: 50.0 },  // Catwalk / Short A
-    { x: -2.0, y: 3.37, z: -4.0 },   // Middle
-    { x: -44.0, y: 7.57, z: -4.0 }   // Upper B Tunnels
+    { x: 34.0, y: 9.28, z: -40.0 },
+    { x: -47.72, y: 10.16, z: 53.88 },
+    { x: -45.4, y: 6.72, z: -27.49 },
+    { x: 24.46, y: 6.72, z: 34.26 },
+    { x: -3.23, y: 3.31, z: -7.46 },
+    { x: 46.5, y: 6.72, z: 0.0 },
+    { x: -38.21, y: 7.57, z: 14.78 },
+    { x: -7.72, y: 10.16, z: 53.88 }
   ],
   stalkyard: [
-    { x: -18.0, y: 1.81, z: -16.0 },
-    { x: 18.0, y: 1.81, z: -16.0 },
-    { x: 0.0, y: 1.81, z: -16.0 },
-    { x: -16.0, y: 2.66, z: 0.0 },
-    { x: 10.0, y: 7.35, z: 10.0 },
-    { x: 22.0, y: 1.81, z: 18.0 },
-    { x: -22.0, y: 1.88, z: 18.0 },
-    { x: 0.0, y: 6.07, z: 18.0 }
+    { x: 20.5, y: 1.81, z: -16.0 },
+    { x: -26.84, y: 1.81, z: 16.46 },
+    { x: 15.5, y: 1.81, z: 21.5 },
+    { x: -12.0, y: 1.81, z: -13.5 },
+    { x: 0.5, y: 1.81, z: 4.0 },
+    { x: -19.5, y: 1.81, z: 1.5 },
+    { x: 25.5, y: 1.81, z: 9.0 },
+    { x: -9.36, y: 2.66, z: 16.53 }
   ],
   turbine: [
-    { x: 18.0, y: 8.54, z: -42.0 },
-    { x: -26.0, y: 16.1, z: -10.0 },
-    { x: 0.0, y: 20.99, z: 0.0 },
-    { x: -15.0, y: 19.52, z: 25.0 },
-    { x: 2.0, y: 11.97, z: -48.0 },
-    { x: 6.0, y: 9.03, z: 46.0 },
-    { x: 20.0, y: 10.1, z: -10.0 },
-    { x: -33.9, y: 6.19, z: 33.3 }
+    { x: 15.5, y: 8.56, z: -39.5 },
+    { x: -4.21, y: 9.03, z: 45.44 },
+    { x: -26.65, y: 9.79, z: -4.41 },
+    { x: 16.96, y: 12.03, z: 5.04 },
+    { x: -34.13, y: 6.16, z: 28.05 },
+    { x: 26.86, y: 8.96, z: 33.28 },
+    { x: -4.5, y: 8.67, z: -19.5 },
+    { x: -6.67, y: 6.07, z: 10.51 }
   ],
   frenzy: [
     { x: 28.0, y: 1.88, z: -20.0 },
-    { x: 15.0, y: 6.95, z: -22.0 },
-    { x: 13.0, y: 6.7, z: 24.0 },
-    { x: -30.0, y: 6.77, z: 10.0 },
-    { x: -30.0, y: 6.9, z: -14.0 },
-    { x: -4.9, y: 16.78, z: 28.0 },
-    { x: 20.0, y: 6.83, z: 0.0 },
-    { x: 5.0, y: 17.97, z: -5.0 }
+    { x: -30.32, y: 6.75, z: 14.99 },
+    { x: 11.97, y: 6.71, z: 22.29 },
+    { x: -13.8, y: 1.91, z: -23.88 },
+    { x: 4.38, y: 1.8, z: -3.66 },
+    { x: -26.3, y: 1.81, z: -6.38 },
+    { x: -10.32, y: 6.71, z: 22.49 },
+    { x: 23.12, y: 6.81, z: 3.22 }
   ],
   italy: [
-    { x: -12.0, y: 7.01, z: 58.0 },
-    { x: -18.0, y: 3.89, z: 42.0 },
-    { x: -5.0, y: 3.7, z: 20.0 },
-    { x: 0.0, y: 11.09, z: 0.0 },
-    { x: 18.0, y: 3.68, z: -20.0 },
-    { x: -25.0, y: 14.51, z: -52.0 },
-    { x: 26.0, y: 15.33, z: -60.0 },
-    { x: -15.0, y: 12.0, z: -20.0 }
+    { x: 15.5, y: 3.68, z: -17.5 },
+    { x: -11.98, y: 1.6, z: 51.74 },
+    { x: -26.92, y: 3.89, z: -42.62 },
+    { x: 30.5, y: 11.17, z: -62.38 },
+    { x: -24.22, y: 3.68, z: -0.08 },
+    { x: 28.01, y: 3.68, z: 17.2 },
+    { x: 3.0, y: 3.68, z: -45.0 },
+    { x: -4.45, y: 2.74, z: 25.02 }
   ]
 };
+
+// Fixed 2-Team base spawns (verified wide-open & opposite sides of the main connected arena)
+const TEAM_SPAWNS = {
+  dust2: {
+    blue: { x: 34.0, y: 9.28, z: -40.0 },
+    red: { x: -47.72, y: 10.16, z: 53.88 }
+  },
+  stalkyard: {
+    blue: { x: 20.5, y: 1.81, z: -16.0 },
+    red: { x: -26.84, y: 1.81, z: 16.46 }
+  },
+  turbine: {
+    blue: { x: 15.5, y: 8.56, z: -39.5 },
+    red: { x: -4.21, y: 9.03, z: 45.44 }
+  },
+  frenzy: {
+    blue: { x: -30.32, y: 6.75, z: 14.99 },
+    red: { x: 23.12, y: 6.81, z: 3.22 }
+  },
+  italy: {
+    blue: { x: -11.98, y: 1.6, z: 51.74 },
+    red: { x: 3.0, y: 3.68, z: -45.0 }
+  }
+};
+
+// Compact formation offsets verified clear & ceiling-free around each fixed team base
+const TEAM_BASE_OFFSETS = [
+  { x: 0.0, z: 0.0 },
+  { x: 0.9, z: 0.0 },
+  { x: -0.9, z: 0.0 },
+  { x: 0.0, z: 0.9 },
+  { x: 0.0, z: -0.9 }
+];
 
 // Aliases for backwards compatibility with existing room connections
 MAP_SPAWNS.warehouse = MAP_SPAWNS.stalkyard;
@@ -278,6 +311,13 @@ MAP_SPAWNS.desert = MAP_SPAWNS.frenzy;
 MAP_SPAWNS.arena = MAP_SPAWNS.italy;
 MAP_SPAWNS.colosseum = MAP_SPAWNS.italy;
 MAP_SPAWNS.dungeon = MAP_SPAWNS.dust2;
+
+TEAM_SPAWNS.warehouse = TEAM_SPAWNS.stalkyard;
+TEAM_SPAWNS.station = TEAM_SPAWNS.turbine;
+TEAM_SPAWNS.desert = TEAM_SPAWNS.frenzy;
+TEAM_SPAWNS.arena = TEAM_SPAWNS.italy;
+TEAM_SPAWNS.colosseum = TEAM_SPAWNS.italy;
+TEAM_SPAWNS.dungeon = TEAM_SPAWNS.dust2;
 
 const MAX_TEAM_SIZE = 5;
 const TEAM_COLORS = {
@@ -294,6 +334,45 @@ function getRandomSpawn(mapId = 'dust2', excludeIndex = -1) {
   return { ...spawns[idx], spawnIndex: idx };
 }
 
+function getOtherPlayerPositions(room, excludePlayerId = null) {
+  if (!room || !room.players) return [];
+  const alive = [];
+  const allOthers = [];
+  for (const p of Object.values(room.players)) {
+    if (p.id === excludePlayerId || !p.position) continue;
+    allOthers.push(p.position);
+    if (p.isAlive) alive.push(p.position);
+  }
+  return alive.length > 0 ? alive : allOthers;
+}
+
+// Solo / FFA: choose spawn maximizing minimum distance to every other player
+function getFarthestSpawn(mapId = 'dust2', occupiedPositions = []) {
+  const spawns = MAP_SPAWNS[mapId] || MAP_SPAWNS.dust2;
+  if (!occupiedPositions || occupiedPositions.length === 0) {
+    return getRandomSpawn(mapId);
+  }
+
+  let bestIdx = 0;
+  let bestMinDistSq = -1;
+  for (let i = 0; i < spawns.length; i++) {
+    const sp = spawns[i];
+    let minDistSq = Infinity;
+    for (const op of occupiedPositions) {
+      const dx = sp.x - op.x;
+      const dy = sp.y - op.y;
+      const dz = sp.z - op.z;
+      const dSq = dx * dx + dy * dy + dz * dz;
+      if (dSq < minDistSq) minDistSq = dSq;
+    }
+    if (minDistSq > bestMinDistSq) {
+      bestMinDistSq = minDistSq;
+      bestIdx = i;
+    }
+  }
+  return { ...spawns[bestIdx], spawnIndex: bestIdx };
+}
+
 function getTeamCounts(room) {
   let blue = 0;
   let red = 0;
@@ -304,19 +383,40 @@ function getTeamCounts(room) {
   return { blue, red };
 }
 
-function getTeamSpawn(mapId = 'dust2', team = null, slotIndex = -1) {
-  const spawns = MAP_SPAWNS[mapId] || MAP_SPAWNS.dust2;
-  if (!team || spawns.length < 2) {
-    return getRandomSpawn(mapId);
+// 2-Team mode: always spawn at the fixed base point for that team
+function getTeamSpawn(mapId = 'dust2', team = null, slotIndex = 0) {
+  const bases = TEAM_SPAWNS[mapId] || TEAM_SPAWNS.dust2;
+  const side = team === 'red' ? 'red' : 'blue';
+  const base = bases[side];
+  if (!base) return getRandomSpawn(mapId);
+  const idx = slotIndex >= 0 ? slotIndex : 0;
+  const offset = TEAM_BASE_OFFSETS[idx % TEAM_BASE_OFFSETS.length];
+  return {
+    x: base.x + offset.x,
+    y: base.y,
+    z: base.z + offset.z,
+    spawnIndex: side === 'red' ? 1 : 0
+  };
+}
+
+function assignMatchStartSpawns(room) {
+  const isTdm = room.settings.gameMode === 'tdm';
+  const mapId = room.settings.mapId || 'dust2';
+  const placedPositions = [];
+  let blueSlot = 0;
+  let redSlot = 0;
+
+  for (const player of Object.values(room.players)) {
+    const sp = isTdm
+      ? getTeamSpawn(mapId, player.team, player.team === 'red' ? redSlot++ : blueSlot++)
+      : getFarthestSpawn(mapId, placedPositions);
+    player.health = 100;
+    player.kills = 0;
+    player.deaths = 0;
+    player.isAlive = true;
+    player.position = { x: sp.x, y: sp.y, z: sp.z };
+    placedPositions.push(player.position);
   }
-  // Split spawn points by side: Blue uses [0, 2, 4, 5], Red uses [1, 3, 6, 7]
-  const blueIndices = [0, 2, 4, 5].filter(i => i < spawns.length);
-  const redIndices = [1, 3, 6, 7].filter(i => i < spawns.length);
-  const pool = team === 'blue' ? blueIndices : redIndices;
-  const pickIdx = slotIndex >= 0
-    ? pool[slotIndex % pool.length]
-    : pool[Math.floor(Math.random() * pool.length)];
-  return { ...spawns[pickIdx], spawnIndex: pickIdx };
 }
 
 function assignAutoTeam(room, preferredTeam = null) {
@@ -513,9 +613,19 @@ function applyDamageAndCheckKill(room, roomId, shooter, victim, damage, weaponNa
     const currentRoom = rooms.get(roomId);
     if (!currentRoom || !currentRoom.players[victim.id] || currentRoom.status !== 'in-game') return;
 
-    const newSpawn = currentRoom.settings.gameMode === 'tdm'
-      ? getTeamSpawn(currentRoom.settings.mapId, victim.team)
-      : getRandomSpawn(currentRoom.settings.mapId);
+    let newSpawn;
+    if (currentRoom.settings.gameMode === 'tdm') {
+      const teammates = Object.values(currentRoom.players)
+        .filter(p => p.team === victim.team)
+        .map(p => p.id);
+      const teamSlot = Math.max(0, teammates.indexOf(victim.id));
+      newSpawn = getTeamSpawn(currentRoom.settings.mapId, victim.team, teamSlot);
+    } else {
+      newSpawn = getFarthestSpawn(
+        currentRoom.settings.mapId,
+        getOtherPlayerPositions(currentRoom, victim.id)
+      );
+    }
 
     victim.health = 100;
     victim.isAlive = true;
@@ -618,9 +728,13 @@ io.on('connection', (socket) => {
       }
     }
 
-    const spawn = isTdm
-      ? getTeamSpawn(room.settings.mapId, assignedTeam)
-      : getRandomSpawn(room.settings.mapId);
+    let spawn;
+    if (isTdm) {
+      const sameTeamCount = Object.values(room.players).filter(p => p.team === assignedTeam).length;
+      spawn = getTeamSpawn(room.settings.mapId, assignedTeam, sameTeamCount);
+    } else {
+      spawn = getFarthestSpawn(room.settings.mapId, getOtherPlayerPositions(room));
+    }
 
     const newPlayer = {
       id: socket.id,
@@ -711,24 +825,7 @@ io.on('connection', (socket) => {
     room.status = 'in-game';
     room.teamScores = { blue: 0, red: 0 };
 
-    const isTdm = room.settings.gameMode === 'tdm';
-    const spawns = MAP_SPAWNS[room.settings.mapId] || MAP_SPAWNS.warehouse;
-    let sIdx = 0;
-    let blueSlot = 0;
-    let redSlot = 0;
-
-    for (const pid of Object.keys(room.players)) {
-      const player = room.players[pid];
-      const sp = isTdm
-        ? getTeamSpawn(room.settings.mapId, player.team, player.team === 'blue' ? blueSlot++ : redSlot++)
-        : spawns[sIdx % spawns.length];
-      player.health = 100;
-      player.kills = 0;
-      player.deaths = 0;
-      player.isAlive = true;
-      player.position = { x: sp.x, y: sp.y, z: sp.z };
-      sIdx++;
-    }
+    assignMatchStartSpawns(room);
 
     io.to(currentRoomId).emit('match-started', {
       room: room
@@ -910,24 +1007,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(currentRoomId);
     if (!room) return;
 
-    const isTdm = room.settings.gameMode === 'tdm';
-    const spawns = MAP_SPAWNS[room.settings.mapId] || MAP_SPAWNS.warehouse;
-    let sIdx = 0;
-    let blueIdx = 0;
-    let redIdx = 0;
-
-    for (const pid of Object.keys(room.players)) {
-      const player = room.players[pid];
-      const sp = isTdm
-        ? getTeamSpawn(room.settings.mapId, player.team, player.team === 'red' ? redIdx++ : blueIdx++)
-        : spawns[sIdx % spawns.length];
-      player.health = 100;
-      player.kills = 0;
-      player.deaths = 0;
-      player.isAlive = true;
-      player.position = { x: sp.x, y: sp.y, z: sp.z };
-      sIdx++;
-    }
+    assignMatchStartSpawns(room);
     room.teamScores = { blue: 0, red: 0 };
     room.status = 'in-game';
 

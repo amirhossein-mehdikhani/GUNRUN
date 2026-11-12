@@ -158,14 +158,14 @@ export class ArenaMap {
     this.scene.fog = new THREE.FogExp2(0x131f1c, 0.01);
 
     this.spawnPoints = [
-      new THREE.Vector3(-18.0, 1.81, -16.0),
-      new THREE.Vector3(18.0, 1.81, -16.0),
-      new THREE.Vector3(0.0, 1.81, -16.0),
-      new THREE.Vector3(-16.0, 2.66, 0.0),
-      new THREE.Vector3(10.0, 7.35, 10.0),
-      new THREE.Vector3(22.0, 1.81, 18.0),
-      new THREE.Vector3(-22.0, 1.88, 18.0),
-      new THREE.Vector3(0.0, 6.07, 18.0)
+      new THREE.Vector3(20.5, 1.81, -16.0),
+      new THREE.Vector3(-26.84, 1.81, 16.46),
+      new THREE.Vector3(15.5, 1.81, 21.5),
+      new THREE.Vector3(-12.0, 1.81, -13.5),
+      new THREE.Vector3(0.5, 1.81, 4.0),
+      new THREE.Vector3(-19.5, 1.81, 1.5),
+      new THREE.Vector3(25.5, 1.81, 9.0),
+      new THREE.Vector3(-9.36, 2.66, 16.53)
     ];
 
     const hemiLight = new THREE.HemisphereLight(0xa5c4bc, 0x1f2b28, 1.2);
@@ -221,16 +221,16 @@ export class ArenaMap {
     this.scene.background = new THREE.Color(0x090d16);
     this.scene.fog = new THREE.FogExp2(0x0b1220, 0.007);
 
-    // 8 verified walkable spawn points across Turbine's multi-tier arena
+    // 8 verified open walkable spawn points across Turbine's main connected arena
     this.spawnPoints = [
-      new THREE.Vector3(18.0, 8.54, -42.0),
-      new THREE.Vector3(-26.0, 16.1, -10.0),
-      new THREE.Vector3(0.0, 20.99, 0.0),
-      new THREE.Vector3(-15.0, 19.52, 25.0),
-      new THREE.Vector3(2.0, 11.97, -48.0),
-      new THREE.Vector3(6.0, 9.03, 46.0),
-      new THREE.Vector3(20.0, 10.1, -10.0),
-      new THREE.Vector3(-33.9, 6.19, 33.3)
+      new THREE.Vector3(15.5, 8.56, -39.5),
+      new THREE.Vector3(-4.21, 9.03, 45.44),
+      new THREE.Vector3(-26.65, 9.79, -4.41),
+      new THREE.Vector3(16.96, 12.03, 5.04),
+      new THREE.Vector3(-34.13, 6.16, 28.05),
+      new THREE.Vector3(26.86, 8.96, 33.28),
+      new THREE.Vector3(-4.5, 8.67, -19.5),
+      new THREE.Vector3(-6.67, 6.07, 10.51)
     ];
 
     // Sci-fi industrial lighting
@@ -291,16 +291,16 @@ export class ArenaMap {
     this.scene.background = new THREE.Color(0x1a242c);
     this.scene.fog = new THREE.FogExp2(0x1f2c36, 0.008);
 
-    // 8 verified walkable spawn points across Frenzy's courtyard & towers
+    // 8 verified open walkable spawn points across Frenzy's main connected arena
     this.spawnPoints = [
       new THREE.Vector3(28.0, 1.88, -20.0),
-      new THREE.Vector3(15.0, 6.95, -22.0),
-      new THREE.Vector3(13.0, 6.7, 24.0),
-      new THREE.Vector3(-30.0, 6.77, 10.0),
-      new THREE.Vector3(-30.0, 6.9, -14.0),
-      new THREE.Vector3(-4.9, 16.78, 28.0),
-      new THREE.Vector3(20.0, 6.83, 0.0),
-      new THREE.Vector3(5.0, 17.97, -5.0)
+      new THREE.Vector3(-30.32, 6.75, 14.99),
+      new THREE.Vector3(11.97, 6.71, 22.29),
+      new THREE.Vector3(-13.8, 1.91, -23.88),
+      new THREE.Vector3(4.38, 1.8, -3.66),
+      new THREE.Vector3(-26.3, 1.81, -6.38),
+      new THREE.Vector3(-10.32, 6.71, 22.49),
+      new THREE.Vector3(23.12, 6.81, 3.22)
     ];
 
     // Industrial desert outpost lighting
@@ -361,16 +361,16 @@ export class ArenaMap {
     this.scene.background = new THREE.Color(0xaed0ee);
     this.scene.fog = new THREE.FogExp2(0xc5dcee, 0.005);
 
-    // 8 authentic spawns covering Bombsite A, Bombsite B, Long A, Catwalk, Mid, Tunnels, CT & T Spawns (2.0x scale)
+    // 8 verified open walkable spawns across Dust II's connected arena (2.0x scale)
     this.spawnPoints = [
-      new THREE.Vector3(34.0, 9.28, -40.0),  // CT Spawn
-      new THREE.Vector3(-56.0, 7.57, -64.0), // T Spawn
-      new THREE.Vector3(22.0, 6.72, 32.0),   // Bombsite A
-      new THREE.Vector3(-50.0, 10.13, 44.0), // Bombsite B
-      new THREE.Vector3(28.0, 6.72, 2.0),    // Long A
-      new THREE.Vector3(-8.0, 10.13, 50.0),  // Catwalk / Short A
-      new THREE.Vector3(-2.0, 3.37, -4.0),   // Middle
-      new THREE.Vector3(-44.0, 7.57, -4.0)   // Upper B Tunnels
+      new THREE.Vector3(34.0, 9.28, -40.0),
+      new THREE.Vector3(-47.72, 10.16, 53.88),
+      new THREE.Vector3(-45.4, 6.72, -27.49),
+      new THREE.Vector3(24.46, 6.72, 34.26),
+      new THREE.Vector3(-3.23, 3.31, -7.46),
+      new THREE.Vector3(46.5, 6.72, 0.0),
+      new THREE.Vector3(-38.21, 7.57, 14.78),
+      new THREE.Vector3(-7.72, 10.16, 53.88)
     ];
 
     // Ambient and warm sky hemisphere lighting
@@ -424,16 +424,16 @@ export class ArenaMap {
     this.scene.background = new THREE.Color(0x8ab4f8);
     this.scene.fog = new THREE.FogExp2(0xb0c8f0, 0.005);
 
-    // 8 verified walkable spawn points across Italy's alleys, market & archways
+    // 8 verified open walkable spawn points across Italy's connected alleys & courtyards
     this.spawnPoints = [
-      new THREE.Vector3(-12.0, 7.01, 58.0),   // CT Spawn / Market
-      new THREE.Vector3(-18.0, 3.89, 42.0),   // Market corridor
-      new THREE.Vector3(-5.0, 3.7, 20.0),     // Wine cellar / Middle alley
-      new THREE.Vector3(0.0, 11.09, 0.0),     // Apartments / Bridge
-      new THREE.Vector3(18.0, 3.68, -20.0),   // Long street
-      new THREE.Vector3(-25.0, 14.51, -52.0), // T Spawn archway
-      new THREE.Vector3(26.0, 15.33, -60.0),  // T Spawn courtyard
-      new THREE.Vector3(-15.0, 12.0, -20.0)   // Hostage House entrance
+      new THREE.Vector3(15.5, 3.68, -17.5),
+      new THREE.Vector3(-11.98, 1.6, 51.74),
+      new THREE.Vector3(-26.92, 3.89, -42.62),
+      new THREE.Vector3(30.5, 11.17, -62.38),
+      new THREE.Vector3(-24.22, 3.68, -0.08),
+      new THREE.Vector3(28.01, 3.68, 17.2),
+      new THREE.Vector3(3.0, 3.68, -45.0),
+      new THREE.Vector3(-4.45, 2.74, 25.02)
     ];
 
     // Sunset lighting
