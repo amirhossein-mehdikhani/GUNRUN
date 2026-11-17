@@ -8,6 +8,8 @@ import { RemotePlayer, preloadCharacterModel } from './character.js';
 import { SoundEffects } from './audio.js';
 import { GRAPHICS_PRESETS, resolveGraphics, renderPixelRatio } from './graphics.js';
 
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 class GameApp {
   constructor() {
     this.socket = io({ transports: ['websocket', 'polling'], tryAllTransports: true });
@@ -227,6 +229,9 @@ class GameApp {
 
     // Build Multi-Weapon Controller
     this.weapon = new WeaponController(this.camera, this.scene);
+    this.weapon.onReload = () => { if (this.socket.connected) this.socket.emit('weapon-reload'); };
+    this._shotTargets = [];
+    this._shotIntersections = [];
     this.scene.add(this.camera);
 
     // Build Tactical Projectile Manager (Frag & Flashbang)
@@ -435,7 +440,7 @@ class GameApp {
     }
 
     // Sync weapon switch over LAN
-    this.socket.emit('weapon-switch', { slot: slotIndex });
+    if (!this._restoring) this.socket.emit('weapon-switch', { slot: slotIndex });
   }
 
   /** Throws a frag grenade or flashbang cleanly from ground or mid-air jump. */
@@ -893,6 +898,51 @@ class GameApp {
   }
 
   initSocketEvents() {
+    this.socket.on('movement-corrected', ({position,isCrouching}) => {
+      this.camera.position.set(position.x,position.y,position.z);
+      this.isCrouching = isCrouching;
+      this.playerHeight = isCrouching ? 1 : 1.6;
+      this.playerVelocity.set(0,0,0);
+    });
+    this.socket.on('hit-confirmed', data => this.triggerHitmarker(data.isHeadshot));
+    this.socket.on('weapon-state', data => {
+      if (data.ammo) this.weapon.ammoState = {...data.ammo};
+      this.updateHudAmmo();
+    });
+    const status = document.getElementById('connection-status');
+    this.socket.on('disconnect', () => {
+      this._disconnectedRoom = this.currentRoom?.id;
+      this.state = 'reconnecting';
+      this.isMouseDown = false;
+      Object.keys(this.moveInput).forEach(key => { this.moveInput[key] = false; });
+      this.controls.unlock();
+      this.scoreboardModal.classList.remove('visible');
+      status.textContent = 'Connection lost — reconnecting…'; status.hidden = false;
+    });
+    this.socket.on('connect', () => {
+      if (this._disconnectedRoom && !this.socket.recovered) {
+        this.leaveToLobby(); this.currentRoom = null; this.localPlayerId = null;
+        status.textContent = 'Session expired. Join a room to play again.'; status.hidden = false;
+        this._disconnectedRoom = null;
+      } else status.hidden = true;
+    });
+    this.socket.on('session-restored', ({room,playerId}) => {
+      this.currentRoom = room; this.localPlayerId = playerId; this._disconnectedRoom = null;
+      status.hidden = true;
+      if (room.status === 'in-game') {
+        this.remotePlayers.forEach(player => player.destroy()); this.remotePlayers.clear();
+        const me = room.players[playerId];
+        this._restoring = true;
+        this.startMatchSession();
+        this.camera.position.set(me.position.x,me.position.y,me.position.z);
+        this.health = me.health; this.isAlive = me.isAlive;
+        this.isCrouching = !!me.isCrouching; this.playerHeight = me.isCrouching ? 1 : 1.6;
+        if (me.combat) { this.switchWeaponSlot(me.combat.slot); this.weapon.ammoState = {...me.combat.ammo}; }
+        this._restoring = false;
+        this.updateHudHealth(); this.updateHudAmmo();
+      } else if (room.status === 'lobby') this.openWaitingRoom(room, room.hostId === playerId);
+      else this.leaveToLobby();
+    });
     this.socket.on('server-pong', (clientTimestamp) => {
       const rtt = Math.round(performance.now() - clientTimestamp);
       if (this.lastRtt !== null) this.rttJitter += (Math.abs(rtt - this.lastRtt) - this.rttJitter) * 0.25;
@@ -905,6 +955,7 @@ class GameApp {
     });
 
     this.socket.on('room-created', ({ room, playerId }) => {
+      status.hidden = true;
       this.localPlayerId = playerId;
       this.currentRoom = room;
       this.openWaitingRoom(room, true);
@@ -913,6 +964,7 @@ class GameApp {
     this.socket.on('room-joined', ({ room, playerId }) => {
       this.localPlayerId = playerId;
       this.currentRoom = room;
+      status.hidden = true;
       const isHost = (room.hostId === playerId);
       this.openWaitingRoom(room, isHost);
     });
@@ -955,7 +1007,7 @@ class GameApp {
         this.remotePlayers.delete(playerId);
       }
 
-      this.addFeedItem(`${playerName} left the match.`);
+      this.addFeedItem(`${escapeHtml(playerName)} left the match.`);
     });
 
     this.socket.on('host-changed', ({ newHostId, newHostName }) => {
@@ -970,7 +1022,7 @@ class GameApp {
       } else {
         this.btnStartMatch.style.display = 'none';
         this.hostMapControl.style.display = 'none';
-        this.waitingHostStatus.textContent = `Waiting for host (${newHostName}) to start match...`;
+        this.waitingHostStatus.textContent = `Waiting for host (${escapeHtml(newHostName)}) to start match...`;
       }
       this.updateWaitingPlayerList();
       this.updatePauseMenuState();
@@ -1165,7 +1217,7 @@ class GameApp {
       const wpn = weaponName || '🔫';
       const kPrefix = killerTeam === 'blue' ? '🔵 ' : (killerTeam === 'red' ? '🔴 ' : '');
       const vPrefix = victimTeam === 'blue' ? '🔵 ' : (victimTeam === 'red' ? '🔴 ' : '');
-      this.addFeedItem(`${kPrefix}${killerName} [${wpn}] ${vPrefix}${victimName}${headshotBadge}`);
+      this.addFeedItem(`${kPrefix}${escapeHtml(killerName)} [${wpn}] ${vPrefix}${escapeHtml(victimName)}${headshotBadge}`);
       this.updateScoreboardTable(scoreboard);
 
       if (victimId === this.localPlayerId) {
@@ -1227,10 +1279,10 @@ class GameApp {
 
       card.innerHTML = `
         <div class="room-info">
-          <div class="room-info-title">${r.name} ${modeBadge}</div>
+          <div class="room-info-title">${escapeHtml(r.name)} ${modeBadge}</div>
           <div class="room-info-meta">
             <span>Map: <b>${displayMap}</b></span>
-            <span>Host: <b>${r.hostName}</b></span>
+            <span>Host: <b>${escapeHtml(r.hostName)}</b></span>
             <span>Players: <b>${r.playerCount}/${r.maxPlayers}</b></span>
             <span>Status: ${statusBadge}</span>
           </div>
@@ -1300,7 +1352,7 @@ class GameApp {
       <div class="player-entry-left">
         <div class="player-color-dot" style="background:${dotColor}"></div>
         <span style="font-size: 16px;">${cIcon}</span>
-        <span class="player-name-text">${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</span>
+        <span class="player-name-text">${escapeHtml(p.name)} ${p.id === this.localPlayerId ? '(You)' : ''}</span>
       </div>
       <div>
         ${p.id === this.currentRoom.hostId ? '<span class="host-tag">HOST</span>' : ''}
@@ -1365,6 +1417,7 @@ class GameApp {
   }
 
   leaveToLobby() {
+    this.weapon.clearEffects();
     this.state = 'lobby';
     this.controls.unlock();
     this.screenWaiting.classList.add('hidden');
@@ -1391,6 +1444,7 @@ class GameApp {
   // IN-MATCH LOGIC & GAMEPLAY
   // ==========================================
   startMatchSession() {
+    this.weapon.clearEffects();
     this.state = 'playing';
     this.screenWaiting.classList.add('hidden');
     this.matchEndModal.classList.remove('active');
@@ -1507,16 +1561,23 @@ class GameApp {
 
     // Raycast configuration
     this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
-    this.raycaster.far = this.weapon.config.isMelee ? this.weapon.config.range : 200;
+    this.raycaster.far = this.weapon.config.range;
 
-    const allTargets = [...this.arenaMap.shootableMeshes];
+    const allTargets = this._shotTargets;
+    allTargets.length = 0;
     for (const remote of this.remotePlayers.values()) {
       if (remote.isAlive) {
         allTargets.push(...remote.hitboxes);
       }
     }
 
-    const intersects = this.raycaster.intersectObjects(allTargets, true);
+    const intersects = this._shotIntersections;
+    intersects.length = 0;
+    const wallDistance = this.arenaMap.triangleIndex?.raycast(this.camera.position, dir, this.raycaster.far);
+    if (!this.arenaMap.triangleIndex) allTargets.push(...this.arenaMap.shootableMeshes);
+    if (wallDistance !== null && wallDistance !== undefined) this.raycaster.far = wallDistance;
+    this.scene.updateMatrixWorld(true);
+    this.raycaster.intersectObjects(allTargets, false, intersects);
 
     let hitPoint = new THREE.Vector3().copy(this.camera.position).addScaledVector(dir, this.raycaster.far);
     let hitPlayerId = null;
@@ -1547,7 +1608,7 @@ class GameApp {
             SoundEffects.playKnifeHit();
           }
 
-          this.triggerHitmarker(isHeadshot || isBackstab);
+          // Hit markers are confirmed by the authoritative server.
         }
       }
     }
@@ -1591,7 +1652,7 @@ class GameApp {
       this.crosshairElem.style.display = 'block';
     }
 
-    this.respawnKillerText.textContent = `Eliminated by ${killerName}`;
+    this.respawnKillerText.textContent = `Eliminated by ${escapeHtml(killerName)}`;
     this.respawnScreen.classList.add('active');
 
     let secondsLeft = 3;
@@ -1697,7 +1758,7 @@ class GameApp {
       const canSeeHealth = p.id === this.localPlayerId ||
         (this.currentRoom?.settings?.gameMode === 'tdm' && myTeam && p.team === myTeam);
       tr.innerHTML = `
-        <td>${teamTag}${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</td>
+        <td>${teamTag}${escapeHtml(p.name)} ${p.id === this.localPlayerId ? '(You)' : ''}</td>
         <td style="color:#94a3b8;font-size:12px;">${cLabel}</td>
         <td style="color:#00f0ff;font-weight:700">${p.kills}</td>
         <td>${p.deaths}</td>
@@ -1735,7 +1796,7 @@ class GameApp {
 
       tr.innerHTML = `
         <td style="font-weight:800; color:${p.rank === 1 ? '#fbbf24' : '#fff'};">${rankBadge}</td>
-        <td style="font-weight:700;">${teamTag}${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</td>
+        <td style="font-weight:700;">${teamTag}${escapeHtml(p.name)} ${p.id === this.localPlayerId ? '(You)' : ''}</td>
         <td style="color:#94a3b8;font-size:12px;">${cLabel}</td>
         <td style="color:#00f0ff;font-weight:800;">${p.kills}</td>
         <td>${p.deaths}</td>

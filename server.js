@@ -1,5 +1,8 @@
 // server.js - RUNGUN LAN Multiplayer FPS Server
 import express from 'express';
+import { assetHandler } from './server/assets.js';
+import { validatePacket } from './server/validation.js';
+import { resetInventory, finishReload, startReload, switchGun, validateShot, loadCollisionIndexes, finiteVector } from './server/combat.js';
 import http from 'node:http';
 import { Server } from 'socket.io';
 import path from 'node:path';
@@ -20,7 +23,9 @@ try {
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { origin: '*' },
+  maxHttpBufferSize: 64 * 1024,
+  connectionStateRecovery: { maxDisconnectionDuration: 30000, skipMiddlewares: false }
 });
 
 const PORT = process.env.PORT || 3000;
@@ -65,98 +70,14 @@ const mimeTypes = {
   '.ttf': 'font/ttf'
 };
 
-// Robust static file serving using readFileSync (eliminates pkg stream/compression truncation issues)
-function serveStaticDir(dirPath) {
-  return (req, res, next) => {
-    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-    let reqUrl = req.path;
-    if (reqUrl === '' || reqUrl === '/') {
-      reqUrl = '/index.html';
-    }
-    const cleanPath = path.normalize(decodeURIComponent(reqUrl)).replace(/^(\.\.[\/\\])+/, '');
-    const filePath = path.join(dirPath, cleanPath);
-
-    if (fs.existsSync(filePath)) {
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.isFile()) {
-          const content = fs.readFileSync(filePath);
-          const ext = path.extname(filePath).toLowerCase();
-          const mime = mimeTypes[ext] || 'application/octet-stream';
-          res.setHeader('Content-Type', mime);
-          res.setHeader('Content-Length', content.length);
-          res.setHeader('Cache-Control', 'public, max-age=0');
-          if (req.method === 'HEAD') return res.end();
-          return res.end(content);
-        }
-      } catch (e) {
-        return next();
-      }
-    }
-    next();
-  };
-}
-
-// 1. Explicit handler for Socket.io client library (guarantees socket.io.js is never empty or 404)
-app.get('/socket.io/socket.io.js', (req, res) => {
-  const candidates = [
-    resolveAssetPath('public', 'js', 'socket.io.min.js'),
-    resolveAssetPath('node_modules', 'socket.io-client', 'dist', 'socket.io.min.js'),
-    resolveAssetPath('node_modules', 'socket.io', 'client-dist', 'socket.io.min.js')
-  ];
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(candidate)) {
-      try {
-        const content = fs.readFileSync(candidate);
-        res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
-        res.setHeader('Content-Length', content.length);
-        res.setHeader('Cache-Control', 'public, max-age=0');
-        return res.end(content);
-      } catch {}
-    }
-  }
-  res.status(404).send('socket.io.js not found');
-});
-
-// 2. Explicit handler for Three.js ES module & addons
-app.use('/node_modules/three', (req, res, next) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-  const subPath = req.path;
-  
-  const candidates = [
-    // Direct from vendor directory
-    subPath.startsWith('/examples/jsm/')
-      ? resolveAssetPath('public', 'vendor', 'three', 'jsm', subPath.slice('/examples/jsm/'.length))
-      : resolveAssetPath('public', 'vendor', 'three', subPath.replace(/^\//, '')),
-    // Direct from node_modules
-    resolveAssetPath('node_modules', 'three', subPath.replace(/^\//, '')),
-    // Fallback inside vendor
-    resolveAssetPath('public', 'vendor', 'three', subPath.replace(/^\//, ''))
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(candidate)) {
-      try {
-        const stat = fs.statSync(candidate);
-        if (stat.isFile()) {
-          const content = fs.readFileSync(candidate);
-          const ext = path.extname(candidate).toLowerCase();
-          const mime = mimeTypes[ext] || 'application/javascript; charset=utf-8';
-          res.setHeader('Content-Type', mime);
-          res.setHeader('Content-Length', content.length);
-          res.setHeader('Cache-Control', 'public, max-age=0');
-          if (req.method === 'HEAD') return res.end();
-          return res.end(content);
-        }
-      } catch {}
-    }
-  }
-  next();
-});
-
-// 3. Serve all public static assets (HTML, CSS, JS, GLB 3D models)
 const publicPath = resolveAssetPath('public');
-app.use(serveStaticDir(publicPath));
+const collisionReady = loadCollisionIndexes(publicPath, fs.promises.readFile);
+let collisionIndexes = null;
+collisionReady.then(value => { collisionIndexes = value; }).catch(error => console.error('Collision data unavailable:', error.message));
+app.get('/socket.io/socket.io.js', assetHandler(publicPath, mimeTypes, () => '/js/socket.io.min.js'));
+app.use('/node_modules/three', assetHandler(resolveAssetPath('node_modules', 'three'), mimeTypes));
+app.use('/node_modules/three', assetHandler(path.join(publicPath, 'vendor', 'three'), mimeTypes, value => value.replace('/examples/jsm/', '/jsm/')));
+app.use(assetHandler(publicPath, mimeTypes));
 
 // API endpoint to give client the exact LAN IPs
 app.get('/api/lan-info', (req, res) => {
@@ -166,36 +87,21 @@ app.get('/api/lan-info', (req, res) => {
   });
 });
 
-// Dev endpoint to save rendered map & character preview thumbnails
-app.post('/api/save-preview', express.json({ limit: '10mb' }), (req, res) => {
-  try {
-    const { category, name, dataUrl } = req.body;
-    if (!category || !name || !dataUrl) return res.status(400).send('Missing params');
-    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+// Thumbnail writing is a local development tool, disabled for distributed builds.
+if (process.env.ENABLE_PREVIEW_WRITE === '1' && !isPkg) {
+  app.post('/api/save-preview', express.json({ limit: '2mb' }), async (req, res) => {
+    const { category, name, dataUrl } = req.body || {};
+    if (!['maps', 'characters'].includes(category) || typeof name !== 'string' || !/^[a-zA-Z0-9_-]{1,60}$/.test(name) ||
+      typeof dataUrl !== 'string' || !/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(dataUrl)) return res.sendStatus(400);
     const targetDir = path.join(publicPath, 'assets', 'images', category);
-    fs.mkdirSync(targetDir, { recursive: true });
-    const filePath = path.join(targetDir, `${name}.jpg`);
-    fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-    console.log(`[Preview Saved] ${category}/${name}.jpg (${base64Data.length} bytes)`);
-    res.json({ ok: true, path: filePath });
-  } catch (err) {
-    console.error('Save preview error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Fallback index.html
-app.use((req, res) => {
-  const indexPath = path.join(publicPath, 'index.html');
-  if (fs.existsSync(indexPath)) {
-    const content = fs.readFileSync(indexPath);
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Content-Length', content.length);
-    res.setHeader('Cache-Control', 'public, max-age=0');
-    return res.end(content);
-  }
-  res.status(404).send('index.html not found');
-});
+    try {
+      await fs.promises.mkdir(targetDir, { recursive: true });
+      await fs.promises.writeFile(path.join(targetDir, name + '.jpg'), Buffer.from(dataUrl.split(',')[1], 'base64'));
+      res.json({ ok: true });
+    } catch { res.sendStatus(500); }
+  });
+}
+app.use((req, res) => res.sendStatus(404));
 
 // Helper: Get LAN IP address
 function getLanIpAddresses() {
@@ -410,6 +316,8 @@ function assignMatchStartSpawns(room) {
     const sp = isTdm
       ? getTeamSpawn(mapId, player.team, player.team === 'red' ? redSlot++ : blueSlot++)
       : getFarthestSpawn(mapId, placedPositions);
+    resetInventory(player, 1);
+    player.isCrouching = false;
     player.health = 100;
     player.kills = 0;
     player.deaths = 0;
@@ -627,6 +535,8 @@ function applyDamageAndCheckKill(room, roomId, shooter, victim, damage, weaponNa
       );
     }
 
+    resetInventory(victim);
+    victim.isCrouching = false;
     victim.health = 100;
     victim.isAlive = true;
     victim.position = { x: newSpawn.x, y: newSpawn.y, z: newSpawn.z };
@@ -642,7 +552,21 @@ function applyDamageAndCheckKill(room, roomId, shooter, victim, damage, weaponNa
 }
 
 io.on('connection', (socket) => {
-  let currentRoomId = null;
+  let currentRoomId = socket.data.roomId || null;
+  const limits = new Map();
+  socket.use((packet, next) => {
+    if (!validatePacket(packet)) return;
+    const key = packet[0] === 'player-movement' ? 'movement' : 'other';
+    const now = performance.now();
+    let bucket = limits.get(key);
+    if (!bucket || now - bucket.start > 1000) { bucket = {start:now,count:0}; limits.set(key,bucket); }
+    if (++bucket.count > (key === 'movement' ? 90 : 50)) return;
+    next();
+  });
+  if (socket.recovered && currentRoomId) {
+    const room = rooms.get(currentRoomId);
+    if (room?.players[socket.id]) socket.emit('session-restored', {room,playerId:socket.id});
+  }
 
   // Send initial room list to newly connected player in lobby
   socket.emit('rooms-update', getPublicRoomList());
@@ -654,6 +578,7 @@ io.on('connection', (socket) => {
 
   // Create a room
   socket.on('create-room', ({ roomName, playerName, playerColor, characterType, settings }) => {
+    if (currentRoomId) return;
     const roomId = 'room_' + Math.random().toString(36).substring(2, 8);
     const chosenMap = settings?.mapId || 'dust2';
     const gameMode = settings?.gameMode === 'tdm' ? 'tdm' : 'ffa';
@@ -697,7 +622,9 @@ io.on('connection', (socket) => {
 
     rooms.set(roomId, newRoom);
     currentRoomId = roomId;
+    socket.data.roomId = roomId;
     socket.join(roomId);
+    resetInventory(rooms.get(roomId).players[socket.id]);
 
     socket.emit('room-created', {
       room: newRoom,
@@ -710,6 +637,7 @@ io.on('connection', (socket) => {
 
   // Join an existing room
   socket.on('join-room', ({ roomId, playerName, playerColor, characterType, preferredTeam }) => {
+    if (currentRoomId) return;
     const room = rooms.get(roomId);
     if (!room) {
       return socket.emit('join-error', 'Room does not exist.');
@@ -753,7 +681,9 @@ io.on('connection', (socket) => {
 
     room.players[socket.id] = newPlayer;
     currentRoomId = roomId;
+    socket.data.roomId = roomId;
     socket.join(roomId);
+    resetInventory(rooms.get(roomId).players[socket.id]);
 
     socket.emit('room-joined', {
       room: room,
@@ -771,7 +701,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(currentRoomId);
     if (!room || room.settings.gameMode !== 'tdm') return;
     const player = room.players[socket.id];
-    if (!player) return;
+    if (!player || room.status !== 'lobby') return;
     if (team !== 'blue' && team !== 'red') return;
     if (player.team === team) return;
 
@@ -790,7 +720,7 @@ io.on('connection', (socket) => {
   socket.on('update-room-settings', ({ settings }) => {
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
-    if (!room || room.hostId !== socket.id) return;
+    if (!room || room.hostId !== socket.id || room.status !== 'lobby') return;
 
     if (settings.mapId) room.settings.mapId = settings.mapId;
     if (settings.gravity) room.settings.gravity = settings.gravity;
@@ -822,6 +752,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(currentRoomId);
     if (!room || room.hostId !== socket.id) return;
 
+    if (!collisionIndexes?.has(room.settings.mapId)) return socket.emit('join-error', 'Map collision data is loading. Try again shortly.');
     room.status = 'in-game';
     room.teamScores = { blue: 0, red: 0 };
 
@@ -843,12 +774,30 @@ io.on('connection', (socket) => {
     if (!room || !room.players[socket.id]) return;
 
     const player = room.players[socket.id];
-    player.position = data.position;
+    if (room.status !== 'in-game' || !player.isAlive || !finiteVector(data.position)) return;
+    const now = performance.now();
+    const elapsed = Math.min(1, Math.max(0, (now - (player.lastMove || now)) / 1000));
+    const returningToSafeFloor = player.safePosition && Math.hypot(player.position.x-player.safePosition.x,
+      player.position.y-player.safePosition.y,player.position.z-player.safePosition.z)>3 && Math.hypot(data.position.x-player.safePosition.x,
+      data.position.y-player.safePosition.y,data.position.z-player.safePosition.z) < 1.5;
+    if (!returningToSafeFloor && (Math.hypot(data.position.x-player.position.x, data.position.z-player.position.z) > 22 * elapsed + 1 ||
+      Math.abs(data.position.y-player.position.y) > 45 * elapsed + 2)) {
+      socket.emit('movement-corrected', {position:player.position,isCrouching:!!player.isCrouching});
+      return;
+    }
+    player.lastMove = now;
+    player.position = {x:data.position.x,y:data.position.y,z:data.position.z};
     player.rotation = data.rotation;
     player.isMoving = data.isMoving;
     player.isRunning = data.isRunning;
     player.isCrouching = !!data.isCrouching;
-    player.isJumping = data.isJumping;
+    const eyeHeight = player.isCrouching ? 1 : 1.6;
+    const floorDistance = collisionIndexes.get(room.settings.mapId).raycast(player.position,{x:0,y:-1,z:0},eyeHeight+.6);
+    if (floorDistance !== null && Math.abs(floorDistance-eyeHeight)<.6) player.safePosition = {...player.position};
+    player.isJumping = !!data.isJumping;
+    player.history ||= [];
+    player.history.push({time:performance.now(),position:{...player.position},isCrouching:player.isCrouching});
+    while (player.history.length > 20) player.history.shift();
 
     // Relay to all other players in this room
     socket.to(currentRoomId).volatile.emit('player-moved', {
@@ -868,6 +817,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(currentRoomId);
     if (!room || !room.players[socket.id]) return;
 
+    switchGun(room.players[socket.id], slot, performance.now());
     room.players[socket.id].activeWeaponSlot = slot;
     socket.to(currentRoomId).emit('player-weapon-switched', {
       playerId: socket.id,
@@ -877,6 +827,7 @@ io.on('connection', (socket) => {
 
   // Throw Tactical Projectile (Frag or Flash)
   socket.on('throw-projectile', (data) => {
+    if (!finiteVector(data.origin) || !finiteVector(data.velocity) || !['frag','flash'].includes(data.type)) return;
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
     if (!room || !room.players[socket.id]) return;
@@ -893,11 +844,13 @@ io.on('connection', (socket) => {
 
   // Frag Grenade Explode (Server-calculated AoE Blast Damage)
   socket.on('grenade-explode', (data) => {
+    if (!finiteVector(data.explosionPoint)) return;
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
     if (!room) return;
 
-    const thrower = room.players[data.throwerId] || room.players[socket.id];
+    const thrower = room.players[socket.id];
+    if (!thrower || room.status !== 'in-game') return;
     const expX = data.explosionPoint.x;
     const expY = data.explosionPoint.y;
     const expZ = data.explosionPoint.z;
@@ -943,6 +896,7 @@ io.on('connection', (socket) => {
 
   // Flashbang Detonate
   socket.on('flash-detonate', (data) => {
+    if (!finiteVector(data.position)) return;
     if (!currentRoomId) return;
     socket.to(currentRoomId).emit('flash-detonated', {
       position: data.position,
@@ -950,57 +904,22 @@ io.on('connection', (socket) => {
     });
   });
 
-  // In-game: Shooting & Hit Registration
-  socket.on('player-shoot', (data) => {
-    if (!currentRoomId) return;
-    const room = rooms.get(currentRoomId);
-    if (!room || !room.players[socket.id]) return;
-
-    const shooter = room.players[socket.id];
-    if (!shooter.isAlive) return;
-
-    // Broadcast visual/audio shooting effect to everyone else in room
-    socket.to(currentRoomId).emit('player-shot-effect', {
-      shooterId: socket.id,
-      origin: data.origin,
-      direction: data.direction,
-      hitPoint: data.hitPoint,
-      weaponSlot: data.weaponSlot || 1
-    });
-
-    // Check hit registration
-    if (data.hitPlayerId && room.players[data.hitPlayerId]) {
-      const victim = room.players[data.hitPlayerId];
-      if (!victim.isAlive) return;
-
-      // Damage calculation based on weapon type
-      let damage = 20;
-      let weaponName = 'Assault Rifle 🔫';
-
-      if (data.weaponSlot === 2) {
-        damage = data.isHeadshot ? 100 : 35;
-        weaponName = 'Semi-Auto DMR 🎯';
-      } else if (data.weaponSlot === 3) {
-        damage = data.isHeadshot ? 200 : 100;
-        weaponName = 'Heavy Sniper 🎯';
-      } else if (data.weaponSlot === 4) {
-        damage = (data.isBackstab || data.isHeadshot) ? 120 : 55;
-        weaponName = data.isBackstab ? 'Knife Backstab 🔪' : 'Combat Knife 🔪';
-      } else {
-        damage = data.isHeadshot ? 100 : 18;
-      }
-
-      applyDamageAndCheckKill(
-        room,
-        currentRoomId,
-        shooter,
-        victim,
-        damage,
-        weaponName,
-        !!data.isHeadshot,
-        false,
-        data.hitPoint
-      );
+  socket.on('weapon-reload', () => {
+    const room = rooms.get(currentRoomId), player = room?.players[socket.id];
+    if (room?.status === 'in-game' && player) startReload(player, performance.now());
+  });
+  socket.on('player-shoot', data => {
+    const room = rooms.get(currentRoomId), shooter = room?.players[socket.id];
+    if (!shooter) return;
+    const shot = validateShot(room, shooter, data, collisionIndexes?.get(room.settings.mapId));
+    if (!shot) {
+      if (shooter.combat) socket.emit('weapon-state', {ammo:shooter.combat.ammo,reloading:!!shooter.combat.reload});
+      return;
+    }
+    socket.to(currentRoomId).emit('player-shot-effect', {shooterId:socket.id, ...shot, victim:undefined, weaponSlot:shot.slot});
+    if (shot.victim) {
+      socket.emit('hit-confirmed', {isHeadshot:shot.headshot});
+      applyDamageAndCheckKill(room,currentRoomId,shooter,shot.victim,shot.damage,shot.weaponName,shot.headshot,false,shot.hitPoint);
     }
   });
 
@@ -1008,7 +927,8 @@ io.on('connection', (socket) => {
   socket.on('rematch-request', () => {
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
-    if (!room) return;
+    if (!room || room.hostId !== socket.id) return;
+    if (!collisionIndexes?.has(room.settings.mapId)) return;
 
     assignMatchStartSpawns(room);
     room.teamScores = { blue: 0, red: 0 };
@@ -1033,7 +953,7 @@ io.on('connection', (socket) => {
   socket.on('return-to-lobby-request', () => {
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
-    if (!room) return;
+    if (!room || room.hostId !== socket.id) return;
 
     room.status = 'lobby';
     room.teamScores = { blue: 0, red: 0 };
@@ -1053,11 +973,18 @@ io.on('connection', (socket) => {
   socket.on('leave-room', () => {
     handleLeaveRoom(socket, currentRoomId);
     currentRoomId = null;
+    delete socket.data.roomId;
   });
 
   // Disconnect
-  socket.on('disconnect', () => {
-    handleLeaveRoom(socket, currentRoomId);
+  socket.on('disconnect', reason => {
+    if (['transport close','transport error','ping timeout'].includes(reason)) {
+      const roomId = currentRoomId;
+      const timer = setTimeout(() => {
+        if (!io.sockets.sockets.has(socket.id)) handleLeaveRoom(socket, roomId);
+      }, 31000);
+      timer.unref();
+    } else handleLeaveRoom(socket, currentRoomId);
   });
 });
 

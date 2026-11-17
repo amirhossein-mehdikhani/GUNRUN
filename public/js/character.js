@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { disposeTrees, sharedModelResources } from './resources.js';
 import { MovementBuffer } from './movement-buffer.js';
 
 const gltfCache = {
@@ -83,6 +84,7 @@ export class RemotePlayer {
 
   async initModel() {
     await preloadCharacterModel();
+    if (this.destroyed) return;
 
     if (this.characterType !== 'heavy' && gltfCache[this.characterType]) {
       try {
@@ -98,6 +100,7 @@ export class RemotePlayer {
   }
 
   setupGltfModel(gltf) {
+    this.borrowedResources = sharedModelResources(gltf.scene);
     const clonedModel = SkeletonUtils.clone(gltf.scene);
 
     if (this.characterType === 'robot') {
@@ -325,9 +328,9 @@ export class RemotePlayer {
   setupHitboxVolumes(bounds = null) {
     this.hitboxes = [];
 
-    const feetY = bounds ? bounds.minY : -1.15;
-    const topY = bounds ? bounds.maxY : (this.characterType === 'heavy' ? 0.85 : 0.78);
-    const headRadius = bounds ? bounds.headRadius : (this.characterType === 'heavy' ? 0.27 : 0.25);
+    const feetY = -1.6;
+    const topY = 0.2175;
+    const headRadius = 0.25;
 
     // Position head sphere directly over the character's actual skull/face with zero body overlap
     const headCenterY = topY - headRadius * 0.75;
@@ -532,7 +535,10 @@ export class RemotePlayer {
   }
 
   destroy() {
-    this.scene.remove(this.group);
-    if (this.overheadTexture) this.overheadTexture.dispose();
+    this.destroyed = true;
+    if (this.mixer) { this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.gltfRoot); }
+    disposeTrees([this.group], this.borrowedResources);
+    this.hitboxes.length = 0;
+    this.movementBuffer.samples.length = 0;
   }
 }

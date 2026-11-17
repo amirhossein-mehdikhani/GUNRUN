@@ -2,62 +2,8 @@
 import * as THREE from 'three';
 import { SoundEffects } from './audio.js';
 
-export const WEAPON_TYPES = {
-  1: {
-    id: 'auto',
-    name: 'Assault Rifle',
-    code: 'AR-556',
-    maxAmmo: 30,
-    fireRate: 100, // ms (automatic)
-    isAutomatic: true,
-    damageBody: 18,
-    damageHead: 100,
-    range: 120,
-    speedMultiplier: 1.0,
-    reloadDuration: 1500
-  },
-  2: {
-    id: 'semi',
-    name: 'Semi-Auto DMR',
-    code: 'DMR-762',
-    maxAmmo: 12,
-    fireRate: 240, // ms (semi-auto)
-    isAutomatic: false,
-    damageBody: 35,
-    damageHead: 100,
-    range: 140,
-    speedMultiplier: 1.05,
-    reloadDuration: 1400
-  },
-  3: {
-    id: 'sniper',
-    name: 'Heavy Sniper',
-    code: 'AWP-50',
-    maxAmmo: 5,
-    fireRate: 1200, // ms (bolt-action)
-    isAutomatic: false,
-    damageBody: 100,
-    damageHead: 200,
-    range: 200,
-    speedMultiplier: 0.95,
-    reloadDuration: 2200,
-    hasScope: true
-  },
-  4: {
-    id: 'knife',
-    name: 'Combat Knife',
-    code: 'KUKRI-X',
-    maxAmmo: 999,
-    fireRate: 350, // ms
-    isAutomatic: false,
-    damageBody: 55,
-    damageHead: 120,
-    range: 3.2,
-    speedMultiplier: 1.15, // Fast run speed while holding knife!
-    reloadDuration: 0,
-    isMelee: true
-  }
-};
+import { WEAPON_TYPES } from './weapons.js';
+export { WEAPON_TYPES } from './weapons.js';
 
 export class WeaponController {
   constructor(camera, scene) {
@@ -430,6 +376,7 @@ export class WeaponController {
     if (this.isReloading || this.config.isMelee || this.currentAmmo === this.config.maxAmmo) return;
 
     this.isReloading = true;
+    this.onReload?.();
     const slot = this.currentSlot;
     const generation = this.reloadGeneration = (this.reloadGeneration || 0) + 1;
     if (this.isScoped) this.toggleScope(false);
@@ -512,14 +459,25 @@ export class WeaponController {
 
   createImpactSparks(pos) {
     const count = Math.ceil(7 * (this.effectScale ?? 1));
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffd166 });
+    const mat = this.sparkMaterial ||= new THREE.MeshBasicMaterial({ color: 0xffd166 });
+    const geometry = this.sparkGeometry ||= new THREE.BoxGeometry(0.035, 0.035, 0.035);
     for (let i = 0; i < count; i++) {
-      const p = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.035), mat);
+      const p = new THREE.Mesh(geometry, mat);
       p.position.copy(pos);
       const vel = new THREE.Vector3((Math.random() - 0.5) * 6, Math.random() * 4 + 1, (Math.random() - 0.5) * 6);
       this.scene.add(p);
       this.impactParticles.push({ mesh: p, vel, life: 1.0 });
     }
+  }
+
+  clearEffects() {
+    for (const tracer of this.tracers) {
+      this.scene.remove(tracer.mesh);
+      tracer.mesh.geometry.dispose();
+      tracer.mesh.material.dispose();
+    }
+    for (const particle of this.impactParticles) this.scene.remove(particle.mesh);
+    this.tracers.length = this.impactParticles.length = 0;
   }
 
   resetAmmo() {
@@ -566,7 +524,7 @@ export class WeaponController {
       p.mesh.position.addScaledVector(p.vel, delta);
       if (p.life <= 0) {
         this.scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
+        // Spark geometry and material are shared for the app lifetime.
         this.impactParticles.splice(i, 1);
       }
     }

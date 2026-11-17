@@ -5,6 +5,7 @@
   "main": "server.js",
   "bin": "server.js",
   "scripts": {
+    "bake:collision": "node scripts/bake-collision.mjs",
     "test": "node --test tests/*.test.js",
     "start": "node server.js",
     "download-assets": "node download-assets.js",

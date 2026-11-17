@@ -30,7 +30,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   assert.ok(ready, 'Standalone server did not start');
-  for (const asset of ['/style.css', '/js/game.js', '/js/graphics.js', '/js/movement-buffer.js', '/socket.io/socket.io.js', '/node_modules/three/build/three.module.js', '/node_modules/three/examples/jsm/controls/PointerLockControls.js', '/assets/models/Soldier.glb']) {
+  for (const asset of ['/style.css', '/js/game.js', '/js/graphics.js', '/js/weapons.js', '/js/resources.js', '/js/spatial-index.js', '/assets/collision/dust2.bin', '/js/movement-buffer.js', '/socket.io/socket.io.js', '/node_modules/three/build/three.module.js', '/node_modules/three/examples/jsm/controls/PointerLockControls.js', '/assets/models/Soldier.glb']) {
     const response = await fetch(base + asset);
     assert.equal(response.status, 200, asset);
     assert.ok((await response.arrayBuffer()).byteLength > 100, `${asset} was empty`);
@@ -41,6 +41,14 @@ try {
     socket.on('connect', () => socket.emit('client-ping', 42));
     socket.on('server-pong', value => { clearTimeout(timer); value === 42 ? resolve() : reject(new Error('Invalid pong')); });
     socket.on('connect_error', error => { clearTimeout(timer); reject(error); });
+  });
+  // Match start must succeed with embedded server collision data, not just static assets.
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Packaged match start timed out')), 5000);
+    socket.on('room-created', () => socket.emit('start-match'));
+    socket.on('join-error', error => { clearTimeout(timer); reject(new Error(error)); });
+    socket.on('match-started', () => { clearTimeout(timer); resolve(); });
+    socket.emit('create-room', {playerName:'Smoke test',settings:{mapId:'dust2'}});
   });
   console.log('Standalone binary: HTTP, embedded assets and WebSocket passed.');
 } catch (error) {

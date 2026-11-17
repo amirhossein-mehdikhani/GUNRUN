@@ -43,6 +43,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - run: npm run bake:collision
       - run: npm test
       - name: Package standalone executable
         env:

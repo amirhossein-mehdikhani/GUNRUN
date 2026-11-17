@@ -1,5 +1,7 @@
 // map.js - Multi-Map Engine for RUNGUN (Warehouse, Sci-Fi Space Station, Desert Outpost, Cyber Arena, Dark Dungeon)
 import * as THREE from 'three';
+import { disposeTrees } from './resources.js';
+import { TriangleIndex, collectTriangles } from './spatial-index.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Octree } from 'three/addons/math/Octree.js';
 import { Capsule } from 'three/addons/math/Capsule.js';
@@ -71,6 +73,8 @@ export class ArenaMap {
     this.mapBounds = null;
     this.perimeterBounds = { minX: -60, maxX: 60, minZ: -71, maxZ: 71 };
     this._loadToken = 0;
+    this._querySeen = new Set();
+    this.triangleIndex = null;
     // Collision queries run synchronously; reuse their temporary objects each frame.
     this._horizontalPosition = new THREE.Vector3();
     this._horizontalCapsule = new Capsule(new THREE.Vector3(), new THREE.Vector3(), 0.28);
@@ -87,16 +91,8 @@ export class ArenaMap {
     this.isMapReady = false;
     this.mapBounds = null;
 
-    // Remove all map objects, lights, and meshes from scene
-    this.mapObjects.forEach(obj => {
-      this.scene.remove(obj);
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-        else obj.material.dispose();
-      }
-    });
-
+    disposeTrees(this.mapObjects);
+    this.triangleIndex = null;
     this.mapObjects = [];
     this.colliders = [];
     this.shootableMeshes = [];
@@ -484,7 +480,7 @@ export class ArenaMap {
     const loadToken = this._loadToken;
     const loader = new GLTFLoader();
     loader.load(glbPath, (gltf) => {
-      if (loadToken !== this._loadToken || !validMapIds.includes(this.currentMapId)) return;
+      if (loadToken !== this._loadToken || !validMapIds.includes(this.currentMapId)) { disposeTrees([gltf.scene]); return; }
 
       const model = gltf.scene;
       model.scale.set(scale, scale, scale);
@@ -519,6 +515,16 @@ export class ArenaMap {
 
       this.octree = new Octree();
       this.octree.fromGraphNode(root);
+      const coords = [];
+      root.traverse(mesh => {
+        if (!mesh.isMesh) return;
+        const position = mesh.geometry.attributes.position, index = mesh.geometry.index, point = new THREE.Vector3();
+        for (let i = 0; i < (index?.count ?? position.count); i++) {
+          point.fromBufferAttribute(position, index ? index.getX(i) : i).applyMatrix4(mesh.matrixWorld);
+          coords.push(point.x, point.y, point.z);
+        }
+      });
+      this.triangleIndex = new TriangleIndex(new Float32Array(coords));
       this.mapBounds = this.octree.bounds.clone();
       this.perimeterBounds = {
         minX: this.mapBounds.min.x,
@@ -689,7 +695,7 @@ export class ArenaMap {
         capsule.end.set(cur.x, cur.y - 0.25, cur.z);
 
         tris.length = 0;
-        this.octree.getCapsuleTriangles(capsule, tris);
+        collectTriangles(this.octree, box => capsule.intersectsBox(box), tris, this._querySeen);
 
         let moved = false;
         for (let i = 0; i < tris.length; i++) {
@@ -733,7 +739,7 @@ export class ArenaMap {
     capsule.end.set(pos.x, feetY + standingHeight - 0.05, pos.z);
     const tris = this._horizontalTriangles;
     tris.length = 0;
-    this.octree.getCapsuleTriangles(capsule, tris);
+    collectTriangles(this.octree, box => capsule.intersectsBox(box), tris, this._querySeen);
     this._horizontalAnchor.copy(pos);
     for (const tri of tris) {
       tri.getNormal(_triNormal);
@@ -753,7 +759,7 @@ export class ArenaMap {
       playerRadius
     );
     const tris = [];
-    this.octree.getCapsuleTriangles(headCapsule, tris);
+    collectTriangles(this.octree, box => headCapsule.intersectsBox(box), tris, this._querySeen);
     const prevAnchor = new THREE.Vector3(pos.x, prevY - 0.35, pos.z);
 
     let lowestCeilingPushY = null;
@@ -783,7 +789,7 @@ export class ArenaMap {
     ray.origin.set(x, originY, z);
     const tris = this._floorTriangles;
     tris.length = 0;
-    this.octree.getRayTriangles(ray, tris);
+    collectTriangles(this.octree, box => ray.intersectsBox(box), tris, this._querySeen);
 
     let bestFloorY = null;
     const minAcceptY = originY - maxDrop;
@@ -874,7 +880,7 @@ export class ArenaMap {
       _projDir.copy(_projMove).divideScalar(stepLen);
       _projRay.set(prevPos, _projDir);
       const tris = [];
-      this.octree.getRayTriangles(_projRay, tris);
+      collectTriangles(this.octree, box => _projRay.intersectsBox(box), tris, this._querySeen);
 
       let closestDist = stepLen + radius;
       let hit = false;

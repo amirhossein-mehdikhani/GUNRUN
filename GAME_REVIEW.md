@@ -1,5 +1,7 @@
 # Game review — 2026-11-17
 
+Implementation update: the five requested areas have now been addressed. See [implementation and verification details](QUALITY_IMPROVEMENTS.md). The findings below describe the earlier reviewed state and retain the rationale for the changes.
+
 This is a source review of the current local checkout, including the recent gameplay changes. Performance findings identify plausible bottlenecks; they are not measurements from an older physical device or a multiplayer Wi-Fi session.
 
 ## Highest priorities

@@ -2,6 +2,8 @@
 
 Release automation: [build and publish guide](RELEASING.md). Development findings: [game improvement and optimization review](GAME_REVIEW.md).
 
+Implemented reliability work: [server-side shooting, cleanup, asset serving, spatial queries and reconnection](QUALITY_IMPROVEMENTS.md). Refresh all players' browser tabs after upgrading so the client and server protocols match.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg)](#)
 [![Stack](https://img.shields.io/badge/Tech%20Stack-Node.js%20%7C%20Socket.io%20%7C%20Three.js-orange.svg)](#)
