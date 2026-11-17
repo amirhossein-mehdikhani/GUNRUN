@@ -1,3 +1,4 @@
+import { fitCharacter, rotationClipsForRig } from './model-utils.js';
 import { OPERATORS } from './operators.js';
 // character.js - Multi-Character 3D Engine: Soldier, Robot, Cyborg & Heavy Titan Mech
 import * as THREE from 'three';
@@ -6,44 +7,18 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { disposeTrees, sharedModelResources } from './resources.js';
 import { MovementBuffer } from './movement-buffer.js';
 
-const gltfCache = {
-  soldier: null,
-  robot: null,
-  cyborg: null
-};
-
-let preloadPromise = null;
-
-// Preload all available GLTF models in background
-export function preloadCharacterModel() {
-  if (preloadPromise) return preloadPromise;
-
-  const loader = new GLTFLoader();
-  const models = [
-    { type: 'soldier', path: '/assets/models/Soldier.glb' },
-    { type: 'robot', path: '/assets/models/RobotExpressive.glb' },
-    { type: 'cyborg', path: '/assets/models/Xbot.glb' }
-  ];
-
-  preloadPromise = Promise.all(
-    models.map(m => new Promise((resolve) => {
-      loader.load(
-        m.path,
-        (gltf) => {
-          console.log(`[CharacterLoader] Loaded ${m.type} (${m.path})`);
-          gltfCache[m.type] = gltf;
-          resolve(gltf);
-        },
-        undefined,
-        (err) => {
-          console.warn(`[CharacterLoader] ${m.type} failed to load, procedural fallback ready:`, err.message);
-          resolve(null);
-        }
-      );
-    }))
-  );
-
-  return preloadPromise;
+const gltfCache = {};
+const modelPromises = new Map();
+const modelPaths = {animations:'AnimationRig.glb',soldier:'Soldier.glb',robot:'RobotExpressive.glb',cyborg:'Xbot.glb',heavy:'TitanMech.glb',scout:'Pathfinder.glb',sentinel:'Sentinel.glb',ranger:'DesertRanger.glb'};
+export function preloadCharacterModel(type) {
+  if (!type) return Promise.all(['soldier','robot','cyborg'].map(preloadCharacterModel));
+  if (!modelPaths[type]) return Promise.resolve(null);
+  if (!modelPromises.has(type)) modelPromises.set(type,new Promise(resolve=>{
+    new GLTFLoader().load('/assets/models/'+modelPaths[type],gltf=>{gltfCache[type]=gltf;resolve(gltf);},undefined,error=>{
+      console.warn('[CharacterLoader] Model unavailable:',type,error.message);resolve(null);
+    });
+  }));
+  return modelPromises.get(type);
 }
 
 export class RemotePlayer {
@@ -76,7 +51,7 @@ export class RemotePlayer {
     this.overheadTexture = null;
     this.overheadSprite = null;
 
-    this.initModel();
+    this.ready = this.initModel();
     this.buildTeamRing();
     this.buildOverheadUI();
 
@@ -85,11 +60,11 @@ export class RemotePlayer {
   }
 
   async initModel() {
-    if (['scout','sentinel','ranger'].includes(this.characterType)) { this.buildProceduralModel(); return; }
-    await preloadCharacterModel();
+    await preloadCharacterModel(this.characterType);
+    if (['scout','sentinel','ranger'].includes(this.characterType)) await preloadCharacterModel('animations');
     if (this.destroyed) return;
 
-    if (this.characterType !== 'heavy' && gltfCache[this.characterType]) {
+    if (gltfCache[this.characterType]) {
       try {
         this.setupGltfModel(gltfCache[this.characterType]);
         return;
@@ -106,7 +81,9 @@ export class RemotePlayer {
     this.borrowedResources = sharedModelResources(gltf.scene);
     const clonedModel = SkeletonUtils.clone(gltf.scene);
 
-    if (this.characterType === 'robot') {
+    if (['scout','sentinel','ranger','heavy'].includes(this.characterType)) {
+      fitCharacter(clonedModel);
+    } else if (this.characterType === 'robot') {
       clonedModel.scale.set(0.38, 0.38, 0.38);
       clonedModel.position.set(0, -1.6, 0);
       clonedModel.rotation.y = Math.PI;
@@ -120,6 +97,9 @@ export class RemotePlayer {
       clonedModel.position.set(0, -1.6, 0);
       clonedModel.rotation.y = Math.PI;
     }
+
+    // Normalize every imported model, including Xbot (which is already in meter units).
+    fitCharacter(clonedModel);
 
     // Apply team color accent and shadow flags
     const teamColor = new THREE.Color(this.color);
@@ -143,9 +123,21 @@ export class RemotePlayer {
 
     this.mixer = new THREE.AnimationMixer(clonedModel);
     this.animations = {};
-    if (gltf.animations) {
-      gltf.animations.forEach((clip) => {
-        this.animations[clip.name] = this.mixer.clipAction(clip);
+    let clips = gltf.animations || [];
+    if (!clips.length && gltfCache.animations) {
+      // Shared Quaternius rig names; copy rotations only to retain each model's proportions.
+      clips = rotationClipsForRig(gltfCache.animations.animations,clonedModel);
+      gltf.animations = clips;
+    }
+    if (clips.length) {
+      clips.forEach((clip) => {
+        const action=this.mixer.clipAction(clip);
+        this.animations[clip.name] = action;
+        const name=clip.name.split('|').at(-1);
+        if (/^Run(ning)?$/i.test(name)) this.animations.Run=action;
+        if (/^Walk(ing)?$/i.test(name)) this.animations.Walk=action;
+        if (/^Idle$/i.test(name)) this.animations.Idle=action;
+        if (name==='Idle_Gun_Pointing' || name==='Idle_Neutral') this.animations.Idle=action;
       });
     }
 

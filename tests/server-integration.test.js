@@ -71,5 +71,13 @@ test('room validation, active match, malformed packets, concurrent asset loading
   assert.equal(restored.room.players[oldId].combat.ammo[5],32);
   assert.equal(restored.room.players[oldId].combat.ammo[2],undefined);
   assert.equal(restored.room.players[guest.id].health,100,'Forged headshot claim applied');
+  // Server owns Molotov flight, ignition and supply, and broadcasts it to both clients.
+  const origin=restored.room.players[oldId].position;
+  const ignited=event(host,'molotov-ignited');
+  const relayed=event(guest,'projectile-thrown');
+  host.emit('throw-projectile',{id:'test-fire',type:'molotov',origin,velocity:{x:0,y:-4,z:0}});
+  assert.equal((await relayed).type,'molotov');
+  const fire=await ignited;assert.equal(fire.id,'test-fire');assert.equal(fire.duration,6);assert.equal(fire.radius,3.2);
+  const damaged=await event(host,'player-damaged');assert.equal(damaged.damage,12);
   pending=event(guest,'player-left-room'); host.emit('leave-room'); assert.equal((await pending).playerId,oldId);
 });

@@ -1,3 +1,5 @@
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { fitGun } from './model-utils.js';
 import { playerLoadout, fullMagazines } from './loadout.js';
 // weapon.js - Multi-Weapon Loadout Engine: Assault Rifle, Semi-Auto DMR, Sniper Rifle, & Combat Knife
 import * as THREE from 'three';
@@ -41,6 +43,7 @@ export class WeaponController {
     // Weapon Meshes container
     this.weaponMeshes = {};
     this.buildAllWeapons();
+    this.modelReady = this.loadGunModels();
 
     this.camera.add(this.rootGroup);
     this.equipSlot(1, false);
@@ -68,6 +71,28 @@ export class WeaponController {
     for (const slot of Object.keys(this.weaponMeshes)) {
       this.rootGroup.add(this.weaponMeshes[slot]);
     }
+  }
+
+  async loadGunModels() {
+    const files={5:'VectorSMG.glb',6:'SlugShotgun.glb',7:'TacticalPistol.glb',8:'SupportLMG.glb'};
+    await Promise.all(Object.entries(files).map(async ([key,file])=>{
+      const id=Number(key),group=this.weaponMeshes[id];
+      try {
+        const gltf=await new GLTFLoader().loadAsync('/assets/models/'+file);
+        const model=gltf.scene;
+        fitGun(model,id===7?.26:id===5?.43:id===6?.68:.75);
+        const flash=group.userData.muzzleFlash;
+        const materials=new Set();
+        for(const child of [...group.children]) if(child!==flash) {
+          if(child.material) materials.add(child.material);
+          group.remove(child);child.geometry?.dispose();
+        }
+        for(const material of materials) material.dispose();
+        const bounds=new THREE.Box3().setFromObject(model);
+        flash.position.set(0,.015,bounds.min.z-.035);
+        group.userData.muzzlePos=flash.position.clone();group.add(model);
+      } catch(error) { console.warn('[WeaponLoader] Fallback retained for',file,error.message); }
+    }));
   }
 
   configureLoadout(ids) {

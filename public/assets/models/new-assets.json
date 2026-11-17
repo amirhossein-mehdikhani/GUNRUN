@@ -1,0 +1,74 @@
+[
+  {
+    "file": "Pathfinder.glb",
+    "source": "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/0128ca510d653bb04d6d1e4885bd8890b5050b4f/public/glb/modular_men/Adventurer.glb",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "pack": "https://quaternius.com/packs/ultimatemodularcharacters.html",
+    "sha256": "2cb27a7729954cd463b9e9dd8b3b7e64919f3a41f0613a2075ad910bb14ce324"
+  },
+  {
+    "file": "Sentinel.glb",
+    "source": "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/0128ca510d653bb04d6d1e4885bd8890b5050b4f/public/glb/modular_men/Swat.glb",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "pack": "https://quaternius.com/packs/ultimatemodularcharacters.html",
+    "sha256": "1bfe621cb75ab23d9ef6b2bc363479cc4e907aa035cfc4f3034e6137482b32b2"
+  },
+  {
+    "file": "DesertRanger.glb",
+    "source": "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/0128ca510d653bb04d6d1e4885bd8890b5050b4f/public/glb/modular_women/Soldier.glb",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "pack": "https://quaternius.com/packs/ultimatemodularwomen.html",
+    "sha256": "875bf2bed49498a58b8c7116536863bdb4f23ca09e22dc83ea60d091cc516fd1"
+  },
+  {
+    "file": "VectorSMG.glb",
+    "source": "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/0128ca510d653bb04d6d1e4885bd8890b5050b4f/public/glb/modular_sci_fi_guns_pack/SMG_1.glb",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "pack": "https://quaternius.com/packs/scifimodularguns.html",
+    "sha256": "4a92c6765ce2e7688afd962ec1b741c95ace183a90d448d7e094a342d62114f2"
+  },
+  {
+    "file": "SlugShotgun.glb",
+    "source": "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/0128ca510d653bb04d6d1e4885bd8890b5050b4f/public/glb/survival_pack/Shotgun_1.glb",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "pack": "https://quaternius.com/packs/survival.html",
+    "sha256": "f10b4e29e8d011c3c8b193c9354c1034121ab5606b1118feff7f2b9cd95f19b2"
+  },
+  {
+    "file": "TacticalPistol.glb",
+    "source": "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/0128ca510d653bb04d6d1e4885bd8890b5050b4f/public/glb/modular_sci_fi_guns_pack/Pistol_1.glb",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "pack": "https://quaternius.com/packs/scifimodularguns.html",
+    "sha256": "1b0bdaba36a69f4c9821a10da5234c032283fca3d8ffec6445c7a6e352e3127a"
+  },
+  {
+    "file": "SupportLMG.glb",
+    "source": "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/0128ca510d653bb04d6d1e4885bd8890b5050b4f/public/glb/modular_sci_fi_guns_pack/AR_4.glb",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "pack": "https://quaternius.com/packs/scifimodularguns.html",
+    "sha256": "d249dddf433609cccf01d1abe4f8f13d9eee4e1ba33a4bd9617598e6e6a0af60"
+  },
+  {
+    "file": "TitanMech.glb",
+    "source": "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/0128ca510d653bb04d6d1e4885bd8890b5050b4f/public/glb/mech_pack/George.glb",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "pack": "https://quaternius.com/packs/animatedmech.html",
+    "sha256": "5daaf45a3b467dcae1fb0246b1a2edd875189cef5381fff8973028793f1bb69c"
+  },
+  {
+    "file": "AnimationRig.glb",
+    "source": "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/0128ca510d653bb04d6d1e4885bd8890b5050b4f/public/glb/cyberpunk_pack/Character.glb",
+    "author": "Quaternius",
+    "license": "CC0-1.0",
+    "pack": "https://quaternius.com/packs/cyberpunkgamekit.html",
+    "sha256": "006e28f474c8fc20f010ed19c761856a07fbeb967c87e3f5b14474ef745ae844"
+  }
+]

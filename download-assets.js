@@ -1,6 +1,7 @@
 // download-assets.js
 // Downloads permissive free GLTF/GLB models for RUNGUN from Three.js official examples
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,10 +11,7 @@ const __dirname = path.dirname(__filename);
 const targetDir = path.join(__dirname, 'public', 'assets', 'models');
 
 const modelsToDownload = [
-  {
-    name: 'de_dust2_-_cs_map.glb',
-    url: 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/Soldier.glb' // Local map asset
-  },
+
   {
     name: 'arena.glb',
     url: 'https://raw.githubusercontent.com/Ar9av/human-fight-rl/main/assets/arena.glb'
@@ -32,7 +30,10 @@ const modelsToDownload = [
   }
 ];
 
-async function downloadFile(url, destPath) {
+const additions = JSON.parse(fs.readFileSync(path.join(targetDir, "new-assets.json"), "utf8"));
+modelsToDownload.push(...additions.map(asset=>({name:asset.file,url:asset.source,sha256:asset.sha256})));
+
+async function downloadFile(url, destPath, expectedHash) {
   console.log(`[Asset Downloader] Downloading: ${url}`);
   try {
     const controller = new AbortController();
@@ -45,6 +46,8 @@ async function downloadFile(url, destPath) {
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.readUInt32LE(0) !== 0x46546c67) throw new Error('Response is not a GLB model');
+    if (expectedHash && createHash('sha256').update(buffer).digest('hex') !== expectedHash) throw new Error('Asset checksum mismatch');
     fs.writeFileSync(destPath, buffer);
     console.log(`[Asset Downloader] Successfully saved ${path.basename(destPath)} (${(buffer.length / 1024).toFixed(1)} KB)`);
     return true;
@@ -64,11 +67,11 @@ async function main() {
   let successCount = 0;
   for (const model of modelsToDownload) {
     const dest = path.join(targetDir, model.name);
-    if (fs.existsSync(dest) && fs.statSync(dest).size > 1000) {
+    if (fs.existsSync(dest) && fs.statSync(dest).size > 1000 && (!model.sha256 || createHash('sha256').update(fs.readFileSync(dest)).digest('hex') === model.sha256)) {
       console.log(`[Asset Downloader] ${model.name} already exists. Skipping.`);
       successCount++;
     } else {
-      const ok = await downloadFile(model.url, dest);
+      const ok = await downloadFile(model.url, dest, model.sha256);
       if (ok) successCount++;
     }
   }

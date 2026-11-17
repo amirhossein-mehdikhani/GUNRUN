@@ -39,6 +39,7 @@ class GameApp {
     // Tactical Throwables
     this.fragCount = 2;
     this.flashCount = 2;
+    this.molotovCount = 2;
 
     // Movement & Physics
     this.playerVelocity = new THREE.Vector3();
@@ -394,6 +395,9 @@ class GameApp {
         case 'Digit2': this.switchWeaponSlot(this.weapon.loadout[1]); break;
         case 'Digit3': this.switchWeaponSlot(4); break;
         case 'Digit4': this.switchWeaponSlot(4); break;
+        case 'KeyB':
+          if (!e.repeat) this._throwTactical('molotov');
+          break;
         case 'KeyG':
           if (this.state === 'playing' && this.controls.isLocked) e.preventDefault();
           this.throwFragGrenade();
@@ -458,7 +462,10 @@ class GameApp {
     if (this.state !== 'playing' || !this.isAlive || !this.controls.isLocked || !this.projectiles) return;
 
     const isFrag = type === 'frag';
-    if (isFrag) {
+    if (type === 'molotov') {
+      if (this.molotovCount <= 0) return;
+      this.molotovCount--;
+    } else if (isFrag) {
       if (this.fragCount <= 0) return;
       this.fragCount--;
     } else {
@@ -496,7 +503,7 @@ class GameApp {
           explosionPoint: { x: detonatePos.x, y: detonatePos.y, z: detonatePos.z },
           throwerId: this.localPlayerId
         });
-      } else {
+      } else if (type === 'flash') {
         this.socket.emit('flash-detonate', {
           position: { x: detonatePos.x, y: detonatePos.y, z: detonatePos.z }
         });
@@ -510,7 +517,7 @@ class GameApp {
       velocity: { x: velocity.x, y: velocity.y, z: velocity.z }
     });
 
-    this.addFeedItem(isFrag ? '💣 Frag grenade thrown!' : '⚡ Flashbang deployed!');
+    this.addFeedItem(type === 'molotov' ? '🔥 Molotov thrown!' : isFrag ? '💣 Frag grenade thrown!' : '⚡ Flashbang deployed!');
   }
 
   throwFragGrenade() {
@@ -522,6 +529,8 @@ class GameApp {
   }
 
   updateThrowableHud() {
+    const molotovHud=document.getElementById('hud-molotov-count');
+    if(molotovHud) molotovHud.textContent=this.molotovCount;
     if (this.hudFragCount) this.hudFragCount.textContent = this.fragCount;
     if (this.hudFlashCount) this.hudFlashCount.textContent = this.flashCount;
   }
@@ -559,6 +568,18 @@ class GameApp {
   }
 
   initLobbyUI() {
+    const startPreviews=()=>{
+      if (!new URLSearchParams(location.search).has("generatePreviews")) return;
+      if (this.operatorPreviewPromise) return;
+      this.operatorPreviewPromise=import('./operator-previews.js').then(module=>module.renderOperatorPreviews((id,url)=>{
+        document.querySelectorAll(`.character-gallery-card[data-character="${id}"] img`).forEach(image=>image.src=url);
+        this.operatorPreviewImages ||= {};
+        this.operatorPreviewImages[id]=url;
+        if (this.selectedCharacter===id) this.homeQuickCharImg.src=url;
+      })).catch(error=>console.warn('Operator previews unavailable:',error.message));
+    };
+    document.querySelector('[data-tab="characters"]').addEventListener('click',startPreviews);
+    document.querySelectorAll('[data-switch-tab="characters"]').forEach(button=>button.addEventListener('click',startPreviews));
     const choices=[document.getElementById('loadout-primary'),document.getElementById('loadout-secondary')];
     choices.forEach((select,index)=>{
       select.value=String(this.selectedLoadout[index]);
@@ -825,16 +846,16 @@ class GameApp {
     });
 
     const charInfoDict = {
-      soldier: { title: 'Soldier', desc: 'Tactical Commando', img: '/assets/images/characters/soldier.jpg' },
-      robot: { title: 'Cyber Mech', desc: 'Recon Droid', img: '/assets/images/characters/robot.jpg' },
-      cyborg: { title: 'Cyborg', desc: 'Spec-Ops Android (Xbot)', img: '/assets/images/characters/cyborg.jpg' },
+
+
+
       ...OPERATORS,
       heavy: OPERATORS.heavy
     };
 
     const info = charInfoDict[charId] || charInfoDict.soldier;
     if (this.tabPillChar) this.tabPillChar.textContent = info.title;
-    if (this.homeQuickCharImg) this.homeQuickCharImg.src = info.img;
+    if (this.homeQuickCharImg) this.homeQuickCharImg.src = this.operatorPreviewImages?.[charId] || info.img;
     if (this.homeQuickCharTitle) {
       this.homeQuickCharTitle.innerHTML = `${info.title} <span id="home-quick-char-colordot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${this.selectedColor};"></span>`;
     }
@@ -959,7 +980,7 @@ class GameApp {
         this.camera.position.set(me.position.x,me.position.y,me.position.z);
         this.health = me.health; this.isAlive = me.isAlive;
         this.isCrouching = !!me.isCrouching; this.playerHeight = me.isCrouching ? 1 : 1.6;
-        if (me.combat) { this.switchWeaponSlot(me.combat.slot); this.weapon.ammoState = {...me.combat.ammo}; }
+        if (me.combat) { this.molotovCount=me.combat.molotov ?? 2; this.updateThrowableHud(); this.switchWeaponSlot(me.combat.slot); this.weapon.ammoState = {...me.combat.ammo}; }
         this._restoring = false;
         this.updateHudHealth(); this.updateHudAmmo();
       } else if (room.status === 'lobby') this.openWaitingRoom(room, room.hostId === playerId);
@@ -1167,6 +1188,9 @@ class GameApp {
     });
 
     // Remote Thrown Projectiles Sync
+    this.socket.on('molotov-ignited', data => {
+      this.projectiles?.igniteMolotov(data);
+    });
     this.socket.on('projectile-thrown', (data) => {
       if (data.throwerId === this.localPlayerId) return;
       const origin = new THREE.Vector3(data.origin.x, data.origin.y, data.origin.z);
@@ -1527,6 +1551,7 @@ class GameApp {
     this.moveInput.crouch = false;
     this.fragCount = 2;
     this.flashCount = 2;
+    this.molotovCount = 2;
     this.updateThrowableHud();
 
     const myData = this.currentRoom.players[this.localPlayerId];
@@ -1714,6 +1739,7 @@ class GameApp {
     this.health = 100;
     this.fragCount = 2;
     this.flashCount = 2;
+    this.molotovCount = 2;
     this.updateThrowableHud();
     this.updateHudHealth();
     this.respawnScreen.classList.remove('active');

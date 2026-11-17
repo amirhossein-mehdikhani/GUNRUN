@@ -30,7 +30,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   assert.ok(ready, 'Standalone server did not start');
-  for (const asset of ['/style.css', '/js/game.js', '/js/graphics.js', '/js/weapons.js', '/js/resources.js', '/js/spatial-index.js', '/assets/collision/dust2.bin', '/js/movement-buffer.js', '/socket.io/socket.io.js', '/node_modules/three/build/three.module.js', '/node_modules/three/examples/jsm/controls/PointerLockControls.js', '/assets/models/Soldier.glb']) {
+  for (const asset of ['/style.css', '/js/game.js', '/js/graphics.js', '/js/weapons.js', '/js/resources.js', '/js/spatial-index.js', '/assets/collision/dust2.bin', '/js/movement-buffer.js', '/socket.io/socket.io.js', '/node_modules/three/build/three.module.js', '/node_modules/three/examples/jsm/controls/PointerLockControls.js', '/assets/models/Soldier.glb', '/assets/models/Pathfinder.glb', '/assets/models/TitanMech.glb', '/assets/models/AnimationRig.glb', '/assets/models/VectorSMG.glb', '/assets/images/characters/cyborg.png', '/assets/images/characters/soldier.png', '/js/projectiles.js', '/js/model-utils.js']) {
     const response = await fetch(base + asset);
     assert.equal(response.status, 200, asset);
     assert.ok((await response.arrayBuffer()).byteLength > 100, `${asset} was empty`);

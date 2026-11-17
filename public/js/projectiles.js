@@ -10,6 +10,12 @@ export class ProjectileManager {
 
     this.projectiles = []; // Active flying grenades & flashbangs
     this.explosionEffects = []; // Active explosion particles
+    this.fireZones = [];
+    this.bottleGeo=new THREE.CylinderGeometry(.055,.075,.25,8);
+    this.bottleMat=new THREE.MeshStandardMaterial({color:0x38612d,roughness:.35});
+    this.neckGeo=new THREE.CylinderGeometry(.025,.025,.1,6);
+    this.flameGeo=new THREE.ConeGeometry(.28,1,5);
+    this.wickMat=new THREE.MeshBasicMaterial({color:0xffa522});
 
     // Pre-warmed shared geometries & materials (prevents runtime stutter/GC lag)
     this.fragGeo = new THREE.SphereGeometry(0.12, 10, 8);
@@ -40,7 +46,11 @@ export class ProjectileManager {
     const projId = id || 'proj_' + Math.random().toString(36).substring(2, 9);
     let mesh;
 
-    if (type === 'frag') {
+    if(type==='molotov') {
+      mesh=new THREE.Mesh(this.bottleGeo,this.bottleMat);
+      const neck=new THREE.Mesh(this.neckGeo,this.bottleMat);neck.position.y=.17;mesh.add(neck);
+      const wick=new THREE.Mesh(this.flameGeo,this.wickMat);wick.scale.set(.15,.12,.15);wick.position.y=.28;mesh.add(wick);
+    } else if (type === 'frag') {
       mesh = new THREE.Mesh(this.fragGeo, this.fragMat);
       const pin = new THREE.Mesh(this.fragPinGeo, this.fragPinMat);
       pin.position.y = 0.12;
@@ -59,7 +69,7 @@ export class ProjectileManager {
       type: type,
       mesh: mesh,
       velocity: velocity.clone(),
-      life: type === 'frag' ? 2.5 : 1.8, // fuse duration
+      life: type === 'flash' ? 1.8 : 2.5, // fuse duration
       isLocal: isLocal,
       bounces: 0,
       bounceCooldown: 0,
@@ -176,9 +186,37 @@ export class ProjectileManager {
     }, 100);
   }
 
+  igniteMolotov({id,position,duration,radius}) {
+    const flying=this.projectiles.findIndex(p=>p.id===id);
+    if(flying>=0) {this.scene.remove(this.projectiles[flying].mesh);this.projectiles.splice(flying,1);}
+    const group=new THREE.Group();group.position.set(position.x,position.y,position.z);
+    const material=new THREE.MeshBasicMaterial({color:0xff7417,transparent:true,opacity:.8,depthWrite:false});
+    const count=Math.max(5,Math.ceil(14*(this.effectScale??1)));
+    for(let i=0;i<count;i++) {
+      const flame=new THREE.Mesh(this.flameGeo,material);
+      const angle=i*2.39996, r=radius*Math.sqrt(i/count)*.85;
+      flame.position.set(Math.cos(angle)*r,.5,Math.sin(angle)*r);group.add(flame);
+    }
+    // A cheap ground footprint shows the full damage radius, including low quality mode.
+    const discGeo=new THREE.CircleGeometry(radius,24);
+    const discMat=new THREE.MeshBasicMaterial({color:0xe84d09,transparent:true,opacity:.24,depthWrite:false,side:THREE.DoubleSide});
+    const disc=new THREE.Mesh(discGeo,discMat);disc.rotation.x=-Math.PI/2;disc.position.y=.02;group.add(disc);
+    this.scene.add(group);this.fireZones.push({group,material,discGeo,discMat,time:0,duration});
+  }
+
+  removeFire(zone) {
+    this.scene.remove(zone.group);zone.material.dispose();zone.discGeo.dispose();zone.discMat.dispose();
+  }
+
   update(delta, gravity = 22.0) {
     const dt = Math.min(delta, 0.05);
 
+    for(let i=this.fireZones.length-1;i>=0;i--) {
+      const fire=this.fireZones[i];fire.time+=delta;
+      fire.material.opacity=.8*Math.min(1,(fire.duration-fire.time)*2);
+      fire.group.children.forEach((flame,j)=>{if(flame.geometry===this.flameGeo) {flame.scale.y=.65+Math.sin(fire.time*12+j)*.2;flame.rotation.y=fire.time+j;}});
+      if(fire.time>=fire.duration) {this.removeFire(fire);this.fireZones.splice(i,1);}
+    }
     // Fade persistent FX light smoothly
     if (this.fxLightTimer > 0) {
       this.fxLightTimer = Math.max(0, this.fxLightTimer - dt);
@@ -282,6 +320,7 @@ export class ProjectileManager {
   }
 
   clear() {
+    this.fireZones.forEach(zone=>this.removeFire(zone));this.fireZones=[];
     this.projectiles.forEach(p => {
       this.scene.remove(p.mesh);
     });

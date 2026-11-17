@@ -1,3 +1,4 @@
+import { acceptMolotov, stepBottle, inFire, FIRE_RADIUS, FIRE_DURATION } from './server/molotov.js';
 import { playerLoadout, allowedWeapon } from './public/js/loadout.js';
 // server.js - RUNGUN LAN Multiplayer FPS Server
 import express from 'express';
@@ -307,6 +308,7 @@ function getTeamSpawn(mapId = 'dust2', team = null, slotIndex = 0) {
 }
 
 function assignMatchStartSpawns(room) {
+  room.round = (room.round || 0) + 1;
   const isTdm = room.settings.gameMode === 'tdm';
   const mapId = room.settings.mapId || 'dust2';
   const placedPositions = [];
@@ -831,11 +833,37 @@ io.on('connection', (socket) => {
 
   // Throw Tactical Projectile (Frag or Flash)
   socket.on('throw-projectile', (data) => {
-    if (!finiteVector(data.origin) || !finiteVector(data.velocity) || !['frag','flash'].includes(data.type)) return;
+    if (!finiteVector(data.origin) || !finiteVector(data.velocity) || !['frag','flash','molotov'].includes(data.type)) return;
     if (!currentRoomId) return;
     const room = rooms.get(currentRoomId);
     if (!room || !room.players[socket.id]) return;
 
+    if (data.type === 'molotov') {
+      const shooter=room.players[socket.id], index=collisionIndexes?.get(room.settings.mapId);
+      if(room.status!=='in-game' || !acceptMolotov(shooter,data,index)) return;
+      const round=room.round, roomId=currentRoomId;
+      const bottle={position:{...data.origin},velocity:{...data.velocity},age:0,gravity:room.settings.gravity==='antigravity'?5:room.settings.gravity==='low'?12:24};
+      let burnAge=0, burning=false;
+      const timer=setInterval(()=>{
+        if(rooms.get(roomId)!==room || room.status!=='in-game' || room.round!==round) {clearInterval(timer);return;}
+        if(!burning) {
+          if(!stepBottle(bottle,index,1/30)) return;
+          // Settle impact onto the floor below, including wall impacts.
+          const floor=index.raycast({...bottle.position,y:bottle.position.y+.2},{x:0,y:-1,z:0},30);
+          if(floor===null) {clearInterval(timer);return;}
+          bottle.position.y+=.2-floor+.03;burning=true;
+          io.to(roomId).emit('molotov-ignited',{id:data.id,position:bottle.position,duration:FIRE_DURATION,radius:FIRE_RADIUS});
+          return;
+        }
+        burnAge++;
+        if(burnAge%15===0) for(const victim of Object.values(room.players)) {
+          if(inFire(bottle.position,victim,index)) applyDamageAndCheckKill(room,roomId,shooter,victim,12,'Molotov',false,false,bottle.position);
+          if(room.status!=='in-game') break;
+        }
+        if(burnAge>=FIRE_DURATION*30) clearInterval(timer);
+      },1000/30);
+      timer.unref();
+    }
     // Relay to other players
     socket.to(currentRoomId).emit('projectile-thrown', {
       throwerId: socket.id,

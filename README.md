@@ -8,6 +8,8 @@ Choose exactly two different firearms in the main menu before hosting or joining
 
 The arsenal now includes Assault Rifle, DMR, Heavy Sniper, Vector SMG, Slug Shotgun (single powerful projectile), Tactical Pistol and Support LMG. New cosmetic operators are Pathfinder, Sentinel and Desert Ranger; all operators share the same gameplay stats and hitbox sizes.
 
+The new operators and guns now use locally bundled GLB models. See [asset sources, licenses and preview generation](ASSET_CREDITS.md). Operator cards use full-body renders of the actual models.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg)](#)
 [![Stack](https://img.shields.io/badge/Tech%20Stack-Node.js%20%7C%20Socket.io%20%7C%20Three.js-orange.svg)](#)
@@ -75,6 +77,7 @@ Any player can host a match with a single click, and friends on the same Wi-Fi c
 
 | **`Mouse Wheel`** | **Cycle Weapons** | Scroll up/down to cycle your two selected guns and knife |
 | **`G`** | **Frag Grenade** | Throw explosive fragmentation grenade (2 available) |
+| **`B`** | **Molotov** | Throw a fire bottle (2 per life); burns a 3.2m area for 6 seconds |
 | **`F`** | **Flashbang** | Throw tactical flashbang grenade (2 available) |
 | **`Tab`** (Hold) | **Scoreboard** | View real-time player rankings, Kills, Deaths, and Ping |
 | **`ESC`** | **Pause Menu** | Unlock mouse and open In-Game Menu (Resume / Rematch / Leave) |

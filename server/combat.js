@@ -6,7 +6,7 @@ export const finiteVector = v => v && [v.x, v.y, v.z].every(n => Number.isFinite
 const distance = (a, b) => Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
 export function resetInventory(player, slot = player.combat?.slot || playerLoadout(player.loadout)[0]) {
   if (!allowedWeapon(player,slot)) slot = playerLoadout(player.loadout)[0];
-  player.combat = { slot, ammo: fullMagazines(player.loadout), nextShot: 0, switchUntil: 0, reload: null };
+  player.combat = { slot, molotov: 2, ammo: fullMagazines(player.loadout), nextShot: 0, switchUntil: 0, reload: null };
   player.history = [];
   player.lastMove = null;
   player.safePosition = null;
