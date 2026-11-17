@@ -54,4 +54,3 @@ export const WEAPON_TYPES = {
     isMelee: true
   }
 };
-
