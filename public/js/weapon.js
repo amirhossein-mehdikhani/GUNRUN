@@ -430,6 +430,8 @@ export class WeaponController {
     if (this.isReloading || this.config.isMelee || this.currentAmmo === this.config.maxAmmo) return;
 
     this.isReloading = true;
+    const slot = this.currentSlot;
+    const generation = this.reloadGeneration = (this.reloadGeneration || 0) + 1;
     if (this.isScoped) this.toggleScope(false);
 
     SoundEffects.playReload();
@@ -438,6 +440,7 @@ export class WeaponController {
     const duration = this.config.reloadDuration;
 
     const animateReload = () => {
+      if (!this.isReloading || this.currentSlot !== slot || this.reloadGeneration !== generation) return;
       const elapsed = performance.now() - startTime;
       const progress = Math.min(1.0, elapsed / duration);
 
@@ -508,7 +511,7 @@ export class WeaponController {
   }
 
   createImpactSparks(pos) {
-    const count = 7;
+    const count = Math.ceil(7 * (this.effectScale ?? 1));
     const mat = new THREE.MeshBasicMaterial({ color: 0xffd166 });
     for (let i = 0; i < count; i++) {
       const p = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.035), mat);
@@ -519,7 +522,27 @@ export class WeaponController {
     }
   }
 
+  resetAmmo() {
+    // Invalidate callbacks from the previous life before refilling every slot.
+    this.reloadGeneration = (this.reloadGeneration || 0) + 1;
+    this.isReloading = false;
+    this.isSwitching = false;
+    for (const [slot, config] of Object.entries(WEAPON_TYPES)) {
+      this.ammoState[slot] = config.maxAmmo;
+    }
+    if (this.isScoped) this.toggleScope(false);
+    this.lastShotTime = 0;
+    this.recoilAmount = 0;
+    this.rootGroup.position.set(0, 0, 0);
+    this.rootGroup.rotation.set(0, 0, 0);
+  }
+
+  autoReload() {
+    if (!this.config.isMelee && this.currentAmmo <= 0 && !this.isReloading && !this.isSwitching) this.reload();
+  }
+
   update(delta, isMoving, isRunning) {
+    this.autoReload();
     // 1. Tracers
     for (let i = this.tracers.length - 1; i >= 0; i--) {
       const t = this.tracers[i];

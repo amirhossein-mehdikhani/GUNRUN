@@ -6,10 +6,11 @@ import { WeaponController } from './weapon.js';
 import { ProjectileManager } from './projectiles.js';
 import { RemotePlayer, preloadCharacterModel } from './character.js';
 import { SoundEffects } from './audio.js';
+import { GRAPHICS_PRESETS, resolveGraphics, renderPixelRatio } from './graphics.js';
 
 class GameApp {
   constructor() {
-    this.socket = io();
+    this.socket = io({ transports: ['websocket', 'polling'], tryAllTransports: true });
     this.localPlayerId = null;
     this.currentRoom = null;
     this.remotePlayers = new Map();
@@ -36,7 +37,8 @@ class GameApp {
 
     // Movement & Physics
     this.playerVelocity = new THREE.Vector3();
-    this.moveInput = { forward: false, backward: false, left: false, right: false, sprint: false };
+    this.moveInput = { forward: false, backward: false, left: false, right: false, sprint: false, crouch: false };
+    this.isCrouching = false;
     this.isGrounded = true;
     this.jumpRequested = false;
     this.jumpRequestTimer = 0;
@@ -66,7 +68,26 @@ class GameApp {
 
     // Network Sync Throttle
     this.lastNetworkSync = 0;
+    this.frameStats = { elapsed: 0, frames: 0, slowFrames: 0, maxMs: 0 };
+    this.lastRtt = null;
+    this.rttJitter = 0;
+    this.lastPong = 0;
+    this._moveVector = new THREE.Vector3();
+    this._forward = new THREE.Vector3();
+    this._right = new THREE.Vector3();
+    this._displacement = new THREE.Vector3();
+    this._up = new THREE.Vector3(0, 1, 0);
+    this._networkDirection = new THREE.Vector3();
     this.networkSyncInterval = 1000 / 30; // 30Hz
+    this.graphicsMode = 'auto';
+    try {
+      const saved = localStorage.getItem('rungun-graphics');
+      if (saved === 'auto' || GRAPHICS_PRESETS[saved]) this.graphicsMode = saved;
+    } catch { /* Private browsing may disable storage. */ }
+    this.graphicsPreset = resolveGraphics(this.graphicsMode, navigator);
+    this.resolutionScale = 1;
+    this.qualitySample = { elapsed: 0, frames: 0 };
+    this.lastRenderTime = 0;
 
     // DOM UI Elements
     this.cacheDomElements();
@@ -195,10 +216,10 @@ class GameApp {
     this.camera.position.set(0, this.playerHeight, 0);
 
     const canvas = document.getElementById('game-canvas');
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.setPixelRatio(renderPixelRatio(this.graphicsPreset, innerWidth, innerHeight, devicePixelRatio));
+    this.renderer.shadowMap.enabled = this.graphicsPreset.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     // Build Arena Map system
@@ -210,6 +231,7 @@ class GameApp {
 
     // Build Tactical Projectile Manager (Frag & Flashbang)
     this.projectiles = new ProjectileManager(this.scene, this.arenaMap, this.camera);
+    this.applyGraphics();
 
     // Preload character models
     preloadCharacterModel();
@@ -218,10 +240,41 @@ class GameApp {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.applyRenderResolution();
+    });
+    document.addEventListener('visibilitychange', () => {
+      this.clock.getDelta();
+      this.lastRenderTime = 0;
+      this.isMouseDown = false;
+      Object.keys(this.moveInput).forEach(key => { this.moveInput[key] = false; });
     });
   }
 
+  applyRenderResolution() {
+    this.renderer.setPixelRatio(renderPixelRatio(this.graphicsPreset, innerWidth, innerHeight, devicePixelRatio, this.resolutionScale));
+  }
+
+  applyGraphics() {
+    this.graphicsPreset = resolveGraphics(this.graphicsMode, navigator);
+    this.resolutionScale = 1;
+    this.qualitySample = { elapsed: 0, frames: 0 };
+    const shadowChanged = this.renderer.shadowMap.enabled !== this.graphicsPreset.shadows;
+    this.renderer.shadowMap.enabled = this.graphicsPreset.shadows;
+    if (shadowChanged) this.scene.traverse(obj => {
+      if (obj.material) (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(mat => { mat.needsUpdate = true; });
+    });
+    this.weapon.effectScale = this.graphicsPreset.particles;
+    this.projectiles.effectScale = this.graphicsPreset.particles;
+    document.body.classList.toggle('lightweight-ui', !this.graphicsPreset.shadows);
+    this.applyRenderResolution();
+  }
+
   initControls() {
+    window.addEventListener('blur', () => {
+      this.isMouseDown = false;
+      this.scoreboardModal.classList.remove('visible');
+      Object.keys(this.moveInput).forEach(key => { this.moveInput[key] = false; });
+    });
     this.controls = new PointerLockControls(this.camera, document.body);
 
     this.controls.addEventListener('lock', () => {
@@ -233,6 +286,7 @@ class GameApp {
     // When ESC is pressed or Pointer Lock released
     this.controls.addEventListener('unlock', () => {
       this.isMouseDown = false;
+      this.scoreboardModal.classList.remove('visible');
       if (this.state === 'playing' && this.isAlive) {
         if (this.weapon.isScoped) {
           this.weapon.toggleScope(false);
@@ -282,6 +336,13 @@ class GameApp {
 
     // Keyboard Controls
     window.addEventListener('keydown', (e) => {
+      // Repeated Tab events must also cancel browser focus traversal.
+      if (e.code === 'Tab' && (this.controls.isLocked || this.scoreboardModal.classList.contains('visible'))) {
+        e.preventDefault();
+        this.scoreboardModal.classList.add('visible');
+        return;
+      }
+      if (this.controls.isLocked && e.ctrlKey) e.preventDefault();
       if (e.repeat) return;
       switch (e.code) {
         case 'KeyW': this.moveInput.forward = true; break;
@@ -290,6 +351,10 @@ class GameApp {
         case 'KeyD': this.moveInput.right = true; break;
         case 'ShiftLeft':
         case 'ShiftRight': this.moveInput.sprint = true; break;
+        case 'ControlLeft':
+        case 'ControlRight':
+          if (this.controls.isLocked) { e.preventDefault(); this.moveInput.crouch = true; }
+          break;
         case 'Space':
           if (this.state === 'playing' && this.isAlive && this.controls.isLocked) {
             e.preventDefault();
@@ -322,10 +387,6 @@ class GameApp {
           if (this.state === 'playing' && this.controls.isLocked) e.preventDefault();
           this.throwFlashbang();
           break;
-        case 'Tab':
-          e.preventDefault();
-          this.scoreboardModal.classList.add('visible');
-          break;
       }
     });
 
@@ -337,8 +398,10 @@ class GameApp {
         case 'KeyD': this.moveInput.right = false; break;
         case 'ShiftLeft':
         case 'ShiftRight': this.moveInput.sprint = false; break;
+        case 'ControlLeft':
+        case 'ControlRight': this.moveInput.crouch = false; break;
         case 'Tab':
-          e.preventDefault();
+          if (this.scoreboardModal.classList.contains('visible')) e.preventDefault();
           this.scoreboardModal.classList.remove('visible');
           break;
       }
@@ -481,6 +544,13 @@ class GameApp {
   }
 
   initLobbyUI() {
+    const graphicsSelect = document.getElementById('graphics-quality');
+    graphicsSelect.value = this.graphicsMode;
+    graphicsSelect.addEventListener('change', () => {
+      this.graphicsMode = graphicsSelect.value;
+      try { localStorage.setItem('rungun-graphics', this.graphicsMode); } catch { /* Optional storage. */ }
+      this.applyGraphics();
+    });
     const randomNum = Math.floor(100 + Math.random() * 900);
     this.nicknameInput.value = `Soldier_${randomNum}`;
 
@@ -669,7 +739,7 @@ class GameApp {
 
     // LAN Ping test loop
     setInterval(() => {
-      this.socket.emit('client-ping', performance.now());
+      if (this.socket.connected) this.socket.volatile.emit('client-ping', performance.now());
     }, 2000);
 
     this.fetchLanInfo();
@@ -825,7 +895,9 @@ class GameApp {
   initSocketEvents() {
     this.socket.on('server-pong', (clientTimestamp) => {
       const rtt = Math.round(performance.now() - clientTimestamp);
-      if (this.hudPing) this.hudPing.textContent = `LAN Ping: ${rtt}ms`;
+      if (this.lastRtt !== null) this.rttJitter += (Math.abs(rtt - this.lastRtt) - this.rttJitter) * 0.25;
+      this.lastRtt = rtt;
+      this.lastPong = performance.now();
     });
 
     this.socket.on('rooms-update', (rooms) => {
@@ -1002,10 +1074,11 @@ class GameApp {
       const remote = this.remotePlayers.get(data.id);
       if (remote) {
         remote.setTransform(
-          new THREE.Vector3(data.position.x, data.position.y, data.position.z),
+          data.position,
           data.rotation,
           data.isMoving,
-          data.isRunning
+          data.isRunning,
+          data.isCrouching
         );
       }
     });
@@ -1112,6 +1185,10 @@ class GameApp {
         const remote = this.remotePlayers.get(playerId);
         if (remote) {
           remote.setHealth(health);
+          remote.movementBuffer.samples.length = 0;
+          remote.targetPos = null;
+          remote.isCrouching = false;
+          remote.group.scale.y = 1;
           remote.group.position.set(position.x, position.y, position.z);
         }
       }
@@ -1358,6 +1435,10 @@ class GameApp {
     }
 
     // 3. Reset throwables, ammo & position
+    this.weapon.resetAmmo();
+    this.playerHeight = 1.6;
+    this.isCrouching = false;
+    this.moveInput.crouch = false;
     this.fragCount = 2;
     this.flashCount = 2;
     this.updateThrowableHud();
@@ -1526,6 +1607,14 @@ class GameApp {
   }
 
   handleLocalRespawn(spawnPos) {
+    this.weapon.resetAmmo();
+    this.isMouseDown = false;
+    this.sniperScopeOverlay.classList.add('hidden');
+    this.crosshairElem.style.display = 'block';
+    this.updateHudAmmo();
+    this.playerHeight = 1.6;
+    this.isCrouching = false;
+    this.moveInput.crouch = false;
     this.isAlive = true;
     this.health = 100;
     this.fragCount = 2;
@@ -1604,12 +1693,15 @@ class GameApp {
       if (p.id === this.localPlayerId) tr.className = 'current-user';
       const cLabel = charIcons[p.characterType] || '🎖️ Soldier';
       const teamTag = this.formatTeamTag(p.team);
+      const myTeam = this.currentRoom?.players?.[this.localPlayerId]?.team;
+      const canSeeHealth = p.id === this.localPlayerId ||
+        (this.currentRoom?.settings?.gameMode === 'tdm' && myTeam && p.team === myTeam);
       tr.innerHTML = `
         <td>${teamTag}${p.name} ${p.id === this.localPlayerId ? '(You)' : ''}</td>
         <td style="color:#94a3b8;font-size:12px;">${cLabel}</td>
         <td style="color:#00f0ff;font-weight:700">${p.kills}</td>
         <td>${p.deaths}</td>
-        <td>${p.health > 0 ? `<span style="color:#10b981">${p.health} HP</span>` : '<span style="color:#ef4444">DEAD</span>'}</td>
+        <td>${p.health <= 0 ? '<span style="color:#ef4444">DEAD</span>' : canSeeHealth ? `<span style="color:#10b981">${p.health} HP</span>` : 'ALIVE'}</td>
       `;
       this.scoreboardBody.appendChild(tr);
     });
@@ -1670,6 +1762,18 @@ class GameApp {
       return;
     }
 
+    const wantsCrouch = this.moveInput.crouch;
+    if (wantsCrouch !== this.isCrouching) {
+      const feet = this.camera.position.y - this.playerHeight;
+      if (wantsCrouch || this.arenaMap.canStandAt(this.camera.position, feet)) {
+        this.isCrouching = wantsCrouch;
+        const oldHeight = this.playerHeight;
+        this.playerHeight = wantsCrouch ? 1.0 : 1.6;
+        this.camera.position.y = feet + this.playerHeight;
+        if (this.lastSafePos) this.lastSafePos.y += this.playerHeight - oldHeight;
+      }
+    }
+
     const currentPos = this.camera.position;
     const playerRadius = 0.28;
 
@@ -1692,12 +1796,15 @@ class GameApp {
       }
     }
 
+    // Resolve camera changes before aim raycasts and outgoing movement snapshots.
+    this.camera.updateMatrixWorld(true);
+
     // Continuous automatic fire when holding left-click
     if (this.isMouseDown && this.weapon.config.isAutomatic) {
       this.handleShoot();
     }
 
-    const moveVector = new THREE.Vector3();
+    const moveVector = this._moveVector.set(0, 0, 0);
     if (this.moveInput.forward) moveVector.z -= 1;
     if (this.moveInput.backward) moveVector.z += 1;
     if (this.moveInput.left) moveVector.x -= 1;
@@ -1707,18 +1814,18 @@ class GameApp {
     if (isMoving) moveVector.normalize();
 
     // Speed calculation with weapon speed multiplier (e.g. Knife gives 1.15x boost!)
-    let speed = this.moveSpeed * (this.moveInput.sprint ? this.sprintMultiplier : 1.0);
+    let speed = this.moveSpeed * (this.isCrouching ? 0.45 : this.moveInput.sprint ? this.sprintMultiplier : 1.0);
     speed *= this.weapon.config.speedMultiplier;
 
-    const forward = new THREE.Vector3();
+    const forward = this._forward;
     this.camera.getWorldDirection(forward);
     forward.y = 0;
     forward.normalize();
 
-    const right = new THREE.Vector3();
-    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+    const right = this._right;
+    right.crossVectors(forward, this._up).normalize();
 
-    const displacement = new THREE.Vector3()
+    const displacement = this._displacement.set(0, 0, 0)
       .addScaledVector(forward, -moveVector.z)
       .addScaledVector(right, moveVector.x)
       .multiplyScalar(speed * delta);
@@ -1817,8 +1924,7 @@ class GameApp {
     // Record last verified safe grounded position on solid map geometry
     if (
       this.isGrounded &&
-      floorHeight > -900 &&
-      this.arenaMap.hasFloorBelow(currentPos.x, currentPos.y - this.playerHeight, currentPos.z)
+      floorHeight > -900
     ) {
       if (!this.lastSafePos) this.lastSafePos = new THREE.Vector3();
       this.lastSafePos.copy(currentPos);
@@ -1838,7 +1944,16 @@ class GameApp {
       this.isGrounded = true;
     }
 
-    this.weapon.update(delta, isMoving, this.moveInput.sprint);
+    this.weapon.update(delta, isMoving, this.moveInput.sprint && !this.isCrouching);
+    const ammoKey = `${this.weapon.currentSlot}:${this.weapon.currentAmmo}:${this.weapon.isReloading}`;
+    if (ammoKey !== this._lastAmmoKey) {
+      this._lastAmmoKey = ammoKey;
+      this.updateHudAmmo();
+      if (!this.weapon.isScoped) {
+        this.sniperScopeOverlay.classList.add('hidden');
+        this.crosshairElem.style.display = 'block';
+      }
+    }
 
     // Tick screen shake timer (applied render-only in animate() so physics and PointerLockControls stay untouched)
     if (this.screenShakeTime > 0) {
@@ -1847,18 +1962,19 @@ class GameApp {
 
     // Sync position & rotation to server
     const now = performance.now();
-    if (now - this.lastNetworkSync >= this.networkSyncInterval) {
-      this.lastNetworkSync = now;
+    if (this.socket.connected && now - this.lastNetworkSync >= this.networkSyncInterval) {
+      this.lastNetworkSync = now - ((now - this.lastNetworkSync) % this.networkSyncInterval);
 
-      const dirVector = new THREE.Vector3();
+      const dirVector = this._networkDirection;
       this.camera.getWorldDirection(dirVector);
       const yaw = Math.atan2(dirVector.x, dirVector.z);
 
-      this.socket.emit('player-movement', {
+      this.socket.volatile.emit('player-movement', {
         position: { x: currentPos.x, y: currentPos.y, z: currentPos.z },
         rotation: { yaw: yaw, pitch: this.camera.rotation.x },
         isMoving: isMoving,
-        isRunning: this.moveInput.sprint && isMoving,
+        isRunning: this.moveInput.sprint && isMoving && !this.isCrouching,
+        isCrouching: this.isCrouching,
         isJumping: !this.isGrounded
       });
     }
@@ -1867,11 +1983,46 @@ class GameApp {
   animate(timestamp) {
     requestAnimationFrame((t) => this.animate(t));
 
-    const delta = Math.min(this.clock.getDelta(), 0.1);
+    // Avoid spending full GPU/CPU power behind menus or in background tabs.
+    const active = this.state === 'playing' && this.controls.isLocked;
+    const frameInterval = 1000 / (document.hidden ? 5 : active ? 60 : 30);
+    if (this.lastRenderTime && timestamp - this.lastRenderTime < frameInterval - 0.5) return;
+    this.lastRenderTime = timestamp - ((timestamp - this.lastRenderTime) % frameInterval);
 
-    if (this.hudFps && delta > 0) {
-      const fps = Math.round(1 / delta);
-      this.hudFps.textContent = `${fps} FPS`;
+    const frameDelta = this.clock.getDelta();
+    const delta = Math.min(frameDelta, 0.1);
+    if (this.graphicsMode === 'auto' && active && this.arenaMap.isMapReady && !document.hidden) {
+      this.qualitySample.elapsed += frameDelta;
+      this.qualitySample.frames++;
+      if (this.qualitySample.elapsed >= 3) {
+        if (this.qualitySample.frames / this.qualitySample.elapsed < 45 && this.resolutionScale > 0.6) {
+          this.resolutionScale = Math.max(0.6, this.resolutionScale - 0.1);
+          this.applyRenderResolution();
+        }
+        this.qualitySample = { elapsed: 0, frames: 0 };
+      }
+    } else {
+      this.qualitySample.elapsed = this.qualitySample.frames = 0;
+    }
+    // Sample real frame times before the physics clamp; avoid DOM writes every frame.
+    const stats = this.frameStats;
+    stats.elapsed += frameDelta;
+    stats.frames++;
+    stats.maxMs = Math.max(stats.maxMs, frameDelta * 1000);
+    if (frameDelta > 0.0334) stats.slowFrames++;
+    if (stats.elapsed >= 0.5) {
+      if (this.hudFps) {
+        this.hudFps.textContent = `${Math.round(stats.frames / stats.elapsed)} FPS`;
+        this.hudFps.title = `Worst frame: ${stats.maxMs.toFixed(1)}ms | Frames over 33ms: ${stats.slowFrames} | Draw calls: ${this.renderer.info.render.calls} | Triangles: ${this.renderer.info.render.triangles}`;
+      }
+      if (this.hudPing) {
+        const transport = this.socket.io.engine?.transport?.name || 'connecting';
+        const stale = performance.now() - this.lastPong > 5000;
+        this.hudPing.textContent = !this.socket.connected ? 'DISCONNECTED' :
+          stale ? 'Ping: waiting…' : `Ping: ${this.lastRtt}ms | Jitter: ${Math.round(this.rttJitter)}ms`;
+        this.hudPing.title = `Transport: ${transport}. Jitter measures round-trip variation, not packet loss.`;
+      }
+      stats.elapsed = stats.frames = stats.slowFrames = stats.maxMs = 0;
     }
 
     if (this.state === 'playing') {

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { MovementBuffer } from './movement-buffer.js';
 
 const gltfCache = {
   soldier: null,
@@ -64,6 +65,8 @@ export class RemotePlayer {
     this.walkAnimTime = 0;
     this.isMoving = false;
     this.isRunning = false;
+    this.movementBuffer = new MovementBuffer();
+    this.bufferedTransform = {};
 
     // Overhead UI
     this.overheadCanvas = null;
@@ -408,7 +411,7 @@ export class RemotePlayer {
     // Background pill with optional team border
     ctx.fillStyle = 'rgba(10, 14, 22, 0.78)';
     ctx.beginPath();
-    ctx.roundRect(8, 4, w - 16, h - 8, 8);
+    ctx.roundRect(8, 4, w - 16, this.isTeammate ? h - 8 : 30, 8);
     ctx.fill();
 
     if (this.team) {
@@ -432,6 +435,12 @@ export class RemotePlayer {
     ctx.font = 'bold 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(displayName, w / 2, 25);
+
+    // Opponents (including every other player in FFA) reveal no health bar.
+    if (!this.isTeammate) {
+      this.overheadTexture.needsUpdate = true;
+      return;
+    }
 
     // Health Bar
     const barW = w - 40;
@@ -465,20 +474,30 @@ export class RemotePlayer {
     }
   }
 
-  setTransform(pos, rot, isMoving, isRunning) {
-    this.targetPos = pos;
+  setTransform(pos, rot, isMoving, isRunning, isCrouching = false) {
+    if (!this.targetPos) this.targetPos = new THREE.Vector3();
+    this.targetPos.copy(pos);
     this.targetRot = rot;
     this.isMoving = isMoving;
     this.isRunning = isRunning;
+    this.isCrouching = isCrouching;
+    this.movementBuffer?.push(pos, rot.yaw, performance.now(), isCrouching);
   }
 
   update(delta) {
-    if (this.targetPos) {
-      this.group.position.lerp(this.targetPos, Math.min(1.0, delta * 20));
+    if (this.movementBuffer?.sample(performance.now(), this.bufferedTransform)) {
+      const pose = this.bufferedTransform;
+      this.group.position.set(pose.x, pose.y, pose.z);
+      this.group.rotation.y = pose.yaw;
+      this.group.scale.y = pose.heightScale;
+    } else if (this.targetPos) {
+      this.group.position.lerp(this.targetPos, 1 - Math.exp(-20 * delta));
     }
-    if (this.targetRot) {
-      this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, this.targetRot.yaw, Math.min(1.0, delta * 20));
+    if (!this.movementBuffer && this.targetRot) {
+      const yawDelta = Math.atan2(Math.sin(this.targetRot.yaw - this.group.rotation.y), Math.cos(this.targetRot.yaw - this.group.rotation.y));
+      this.group.rotation.y += yawDelta * (1 - Math.exp(-20 * delta));
     }
+    if (!this.movementBuffer) this.group.scale.y = this.isCrouching ? 0.625 : 1;
 
     // GLTF animation update
     if (this.isUsingGltf && this.mixer) {

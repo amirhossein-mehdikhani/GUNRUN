@@ -71,6 +71,13 @@ export class ArenaMap {
     this.mapBounds = null;
     this.perimeterBounds = { minX: -60, maxX: 60, minZ: -71, maxZ: 71 };
     this._loadToken = 0;
+    // Collision queries run synchronously; reuse their temporary objects each frame.
+    this._horizontalPosition = new THREE.Vector3();
+    this._horizontalCapsule = new Capsule(new THREE.Vector3(), new THREE.Vector3(), 0.28);
+    this._horizontalAnchor = new THREE.Vector3();
+    this._horizontalTriangles = [];
+    this._floorRay = new THREE.Ray(new THREE.Vector3(), _downDir);
+    this._floorTriangles = [];
 
     this.loadMap('dust2');
   }
@@ -603,13 +610,10 @@ export class ArenaMap {
     let bestSegX = 0, bestSegY = 0, bestSegZ = 0;
     let bestTriX = 0, bestTriY = 0, bestTriZ = 0;
 
-    const edges = [
-      [tri.a, tri.b],
-      [tri.b, tri.c],
-      [tri.c, tri.a]
-    ];
     for (let i = 0; i < 3; i++) {
-      closestPointsLineToLine(capsule.start, capsule.end, edges[i][0], edges[i][1], _pt1, _pt2);
+      const edgeStart = i === 0 ? tri.a : i === 1 ? tri.b : tri.c;
+      const edgeEnd = i === 0 ? tri.b : i === 1 ? tri.c : tri.a;
+      closestPointsLineToLine(capsule.start, capsule.end, edgeStart, edgeEnd, _pt1, _pt2);
       const dSq = _pt1.distanceToSquared(_pt2);
       if (dSq < minDistSq) {
         minDistSq = dSq;
@@ -654,7 +658,7 @@ export class ArenaMap {
 
   // Sub-stepped horizontal movement with double-sided wall sliding and perimeter clamping
   moveAndCollideHorizontal(prevPos, displacement, playerHeight = 1.6, radius = 0.28) {
-    const cur = prevPos.clone();
+    const cur = this._horizontalPosition.copy(prevPos);
     const totalHoriz = Math.hypot(displacement.x, displacement.z);
     if (totalHoriz < 1e-6) {
       this._clampToPerimeter(cur, radius);
@@ -666,9 +670,10 @@ export class ArenaMap {
     const stepX = displacement.x / steps;
     const stepZ = displacement.z / steps;
 
-    const capsule = new Capsule(new THREE.Vector3(), new THREE.Vector3(), radius);
-    const prevAnchor = new THREE.Vector3();
-    const tris = [];
+    const capsule = this._horizontalCapsule;
+    capsule.radius = radius;
+    const prevAnchor = this._horizontalAnchor;
+    const tris = this._horizontalTriangles;
 
     for (let s = 0; s < steps; s++) {
       prevAnchor.set(cur.x, cur.y - 0.65, cur.z);
@@ -720,6 +725,26 @@ export class ArenaMap {
   }
 
   // Prevents jumping through roofs, tunnel ceilings, or door lintels
+  canStandAt(pos, feetY, standingHeight = 1.6) {
+    if (!this.octree) return true;
+    const capsule = this._horizontalCapsule;
+    capsule.radius = 0.28;
+    capsule.start.set(pos.x, feetY + 0.55, pos.z);
+    capsule.end.set(pos.x, feetY + standingHeight - 0.05, pos.z);
+    const tris = this._horizontalTriangles;
+    tris.length = 0;
+    this.octree.getCapsuleTriangles(capsule, tris);
+    this._horizontalAnchor.copy(pos);
+    for (const tri of tris) {
+      tri.getNormal(_triNormal);
+      if (Math.abs(_triNormal.y) < 0.45) continue;
+      if (Math.max(tri.a.y, tri.b.y, tri.c.y) <= feetY + 0.55) continue;
+      const hit = this._doubleSidedTriangleCapsuleIntersect(capsule, tri, this._horizontalAnchor);
+      if (hit && hit.depth > 1e-4) return false;
+    }
+    return true;
+  }
+
   checkCeilingCollision(pos, prevY, playerRadius = 0.28) {
     if (!this.octree) return null;
     const headCapsule = new Capsule(
@@ -754,8 +779,10 @@ export class ArenaMap {
   // Raycast helper returning highest walkable floor <= maxAcceptY using double-sided triangles
   _raycastHighestFloorAt(x, originY, z, maxAcceptY, maxDrop = 35.0) {
     if (!this.octree) return null;
-    const ray = new THREE.Ray(new THREE.Vector3(x, originY, z), _downDir);
-    const tris = [];
+    const ray = this._floorRay;
+    ray.origin.set(x, originY, z);
+    const tris = this._floorTriangles;
+    tris.length = 0;
     this.octree.getRayTriangles(ray, tris);
 
     let bestFloorY = null;

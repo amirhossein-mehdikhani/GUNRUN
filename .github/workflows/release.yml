@@ -1,0 +1,108 @@
+name: Build and release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: node22-win-x64
+            name: windows-x64
+            binary: fps-lan-server-win.exe
+          - runner: ubuntu-22.04
+            target: node22-linux-x64
+            name: linux-x64
+            binary: fps-lan-server-linux
+          - runner: macos-15-intel
+            target: node22-macos-x64
+            name: macos-x64
+            binary: fps-lan-server-macos
+          - runner: macos-15
+            target: node22-macos-arm64
+            name: macos-arm64
+            binary: fps-lan-server-macos
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Package standalone executable
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          BUILD_BINARY: ${{ matrix.binary }}
+        shell: bash
+        run: npx --no-install pkg --targets "$BUILD_TARGET" --output "dist/$BUILD_BINARY" .
+      - name: Smoke test executable from outside checkout
+        env:
+          BUILD_BINARY: ${{ matrix.binary }}
+        run: node scripts/smoke-binary.mjs
+      - name: Archive Windows build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          BUILD_BINARY: ${{ matrix.binary }}
+        run: |
+          Copy-Item README.md dist/README.md
+          Compress-Archive -Path "dist/$env:BUILD_BINARY",dist/README.md -DestinationPath dist/rungun-windows-x64.zip
+      - name: Archive macOS or Linux build
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          BUILD_BINARY: ${{ matrix.binary }}
+          BUILD_NAME: ${{ matrix.name }}
+        run: |
+          chmod +x "dist/$BUILD_BINARY"
+          cp README.md dist/README.md
+          tar -czf "dist/rungun-$BUILD_NAME.tar.gz" -C dist "$BUILD_BINARY" README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rungun-${{ matrix.name }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rungun-*
+          merge-multiple: true
+          path: release
+      - name: Checksums and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          cd release
+          sha256sum *.zip *.tar.gz > SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" ./* --clobber
+          else
+            gh release create "$RELEASE_TAG" ./* --verify-tag --generate-notes --title "RUNGUN $RELEASE_TAG"
+          fi

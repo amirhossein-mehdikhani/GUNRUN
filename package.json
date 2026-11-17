@@ -5,6 +5,7 @@
   "main": "server.js",
   "bin": "server.js",
   "scripts": {
+    "test": "node --test tests/*.test.js",
     "start": "node server.js",
     "download-assets": "node download-assets.js",
     "build:win": "pkg --targets node22-win-x64 --output dist/fps-lan-server-win.exe .",

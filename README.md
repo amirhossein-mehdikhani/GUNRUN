@@ -1,5 +1,7 @@
 # 🔫 RUNGUN - 3D Multiplayer First-Person Shooter (LAN)
 
+Release automation: [build and publish guide](RELEASING.md). Development findings: [game improvement and optimization review](GAME_REVIEW.md).
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg)](#)
 [![Stack](https://img.shields.io/badge/Tech%20Stack-Node.js%20%7C%20Socket.io%20%7C%20Three.js-orange.svg)](#)

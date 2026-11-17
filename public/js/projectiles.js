@@ -96,7 +96,7 @@ export class ProjectileManager {
 
     // Debris / Spark particles using shared geometry & material
     const particles = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < Math.ceil(16 * (this.effectScale ?? 1)); i++) {
       const p = new THREE.Mesh(this.debrisGeo, this.debrisMat);
       p.position.copy(pos);
       const vel = new THREE.Vector3(

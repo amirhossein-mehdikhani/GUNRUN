@@ -837,7 +837,8 @@ io.on('connection', (socket) => {
 
   // In-game: Player Movement Sync
   socket.on('player-movement', (data) => {
-    if (!currentRoomId) return;
+    if (!currentRoomId || !data?.position || !data?.rotation) return;
+    if (![data.position.x, data.position.y, data.position.z, data.rotation.yaw, data.rotation.pitch].every(Number.isFinite)) return;
     const room = rooms.get(currentRoomId);
     if (!room || !room.players[socket.id]) return;
 
@@ -846,15 +847,17 @@ io.on('connection', (socket) => {
     player.rotation = data.rotation;
     player.isMoving = data.isMoving;
     player.isRunning = data.isRunning;
+    player.isCrouching = !!data.isCrouching;
     player.isJumping = data.isJumping;
 
     // Relay to all other players in this room
-    socket.to(currentRoomId).emit('player-moved', {
+    socket.to(currentRoomId).volatile.emit('player-moved', {
       id: socket.id,
       position: data.position,
       rotation: data.rotation,
       isMoving: data.isMoving,
       isRunning: data.isRunning,
+      isCrouching: !!data.isCrouching,
       isJumping: data.isJumping
     });
   });
