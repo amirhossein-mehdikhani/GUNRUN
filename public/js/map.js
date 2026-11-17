@@ -1,3 +1,4 @@
+import {createKillhouse,KILLHOUSE_SPAWNS,worldTriangles} from './killhouse.js';
 // map.js - Multi-Map Engine for RUNGUN (Warehouse, Sci-Fi Space Station, Desert Outpost, Cyber Arena, Dark Dungeon)
 import * as THREE from 'three';
 import { disposeTrees } from './resources.js';
@@ -106,7 +107,9 @@ export class ArenaMap {
     this.clearMap();
     this.currentMapId = mapId || 'dust2';
 
-    if (this.currentMapId === 'dust2' || this.currentMapId === 'dungeon') {
+    if(this.currentMapId==='killhouse') {
+      this.buildKillhouse();
+    } else if (this.currentMapId === 'dust2' || this.currentMapId === 'dungeon') {
       this.buildDust2();
     } else if (this.currentMapId === 'stalkyard' || this.currentMapId === 'warehouse') {
       this.buildStalkyard();
@@ -119,6 +122,17 @@ export class ArenaMap {
     } else {
       this.buildDust2();
     }
+  }
+
+  buildKillhouse() {
+    this.baseFloorHeight=0;this.scene.background=new THREE.Color(0xa7b4b8);this.scene.fog=new THREE.Fog(0xa7b4b8,55,95);
+    const root=createKillhouse();this.scene.add(root);this.mapObjects.push(root);
+    root.traverse(mesh=>{if(mesh.isMesh)this.shootableMeshes.push(mesh);});
+    const hemi=new THREE.HemisphereLight(0xe2efff,0x6c5944,2);this.scene.add(hemi);this.mapObjects.push(hemi);
+    const sun=new THREE.DirectionalLight(0xffedcb,2.2);sun.position.set(10,25,8);this.scene.add(sun);this.mapObjects.push(sun);
+    this.spawnPoints=KILLHOUSE_SPAWNS.map(p=>new THREE.Vector3(p.x,p.y,p.z));
+    this.octree=new Octree().fromGraphNode(root);this.triangleIndex=new TriangleIndex(worldTriangles(root));
+    this.mapBounds=this.octree.bounds.clone();this.perimeterBounds={minX:-17.8,maxX:17.8,minZ:-25.8,maxZ:25.8};this.isMapReady=true;
   }
 
   registerCollider(mesh) {

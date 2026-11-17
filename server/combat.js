@@ -7,6 +7,7 @@ const distance = (a, b) => Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
 export function resetInventory(player, slot = player.combat?.slot || playerLoadout(player.loadout)[0]) {
   if (!allowedWeapon(player,slot)) slot = playerLoadout(player.loadout)[0];
   player.combat = { slot, molotov: 2, ammo: fullMagazines(player.loadout), nextShot: 0, switchUntil: 0, reload: null };
+  if(player.ability) player.ability.activeUntil=0;
   player.history = [];
   player.lastMove = null;
   player.safePosition = null;
@@ -101,7 +102,7 @@ export function validateShot(room, shooter, data, index, now = performance.now()
 
 export async function loadCollisionIndexes(publicPath, readFile) {
   const indexes = new Map();
-  await Promise.all(['dust2','stalkyard','turbine','frenzy','italy'].map(async id => {
+  await Promise.all(['dust2','stalkyard','turbine','frenzy','italy','killhouse'].map(async id => {
     const bytes = await readFile(`${publicPath}/assets/collision/${id}.bin`);
     indexes.set(id, new TriangleIndex(new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))));
   }));

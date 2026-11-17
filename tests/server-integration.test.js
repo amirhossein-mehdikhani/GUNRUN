@@ -80,4 +80,11 @@ test('room validation, active match, malformed packets, concurrent asset loading
   const fire=await ignited;assert.equal(fire.id,'test-fire');assert.equal(fire.duration,6);assert.equal(fire.radius,3.2);
   const damaged=await event(host,'player-damaged');assert.equal(damaged.damage,12);
   pending=event(guest,'player-left-room'); host.emit('leave-room'); assert.equal((await pending).playerId,oldId);
+  pending=event(host,'room-created');host.emit('create-room',{playerName:'Guard',characterType:'sentinel',settings:{mapId:'killhouse'}});
+  const killhouse=await pending;assert.equal(killhouse.room.settings.mapId,'killhouse');
+  pending=event(host,'match-started');host.emit('start-match');await pending;
+  pending=event(host,'ability-state');host.emit('use-ability');const ability=await pending;
+  assert.equal(ability.name,'Guard');assert.equal(ability.cooldown,22);assert.equal(ability.duration,5);
+  let duplicate=0;host.on('ability-state',()=>duplicate++);host.emit('use-ability');
+  pending=event(host,'server-pong');host.emit('client-ping',999);await pending;assert.equal(duplicate,0);
 });

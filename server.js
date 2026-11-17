@@ -1,3 +1,5 @@
+import {activateAbility,reduceAbilityDamage} from './server/abilities.js';
+import {KILLHOUSE_SPAWNS} from './public/js/killhouse-spawns.js';
 import { acceptMolotov, stepBottle, inFire, FIRE_RADIUS, FIRE_DURATION } from './server/molotov.js';
 import { playerLoadout, allowedWeapon } from './public/js/loadout.js';
 // server.js - RUNGUN LAN Multiplayer FPS Server
@@ -127,6 +129,7 @@ const rooms = new Map();
 
 // Map-specific arena spawn points (8 Octree-verified open & mutually reachable spawns per GLB map)
 const MAP_SPAWNS = {
+  killhouse: KILLHOUSE_SPAWNS,
   dust2: [
     { x: 34.0, y: 9.28, z: -40.0 },
     { x: -47.72, y: 10.16, z: 53.88 },
@@ -181,6 +184,7 @@ const MAP_SPAWNS = {
 
 // Fixed 2-Team base spawns (verified wide-open & opposite sides of the main connected arena)
 const TEAM_SPAWNS = {
+  killhouse: {blue:{x:0,y:2.2,z:-23},red:{x:0,y:2.2,z:23}},
   dust2: {
     blue: { x: 34.0, y: 9.28, z: -40.0 },
     red: { x: -47.72, y: 10.16, z: 53.88 }
@@ -319,6 +323,7 @@ function assignMatchStartSpawns(room) {
     const sp = isTdm
       ? getTeamSpawn(mapId, player.team, player.team === 'red' ? redSlot++ : blueSlot++)
       : getFarthestSpawn(mapId, placedPositions);
+    player.ability={readyAt:0,activeUntil:0};
     resetInventory(player, playerLoadout(player.loadout)[0]);
     player.isCrouching = false;
     player.health = 100;
@@ -468,6 +473,7 @@ function applyDamageAndCheckKill(room, roomId, shooter, victim, damage, weaponNa
     return false;
   }
 
+  damage=reduceAbilityDamage(victim,damage);
   victim.health = Math.max(0, victim.health - damage);
 
   io.to(roomId).emit('player-damaged', {
@@ -568,7 +574,7 @@ io.on('connection', (socket) => {
   });
   if (socket.recovered && currentRoomId) {
     const room = rooms.get(currentRoomId);
-    if (room?.players[socket.id]) socket.emit('session-restored', {room,playerId:socket.id});
+    if (room?.players[socket.id]) socket.emit('session-restored', {room,playerId:socket.id,serverTime:performance.now()});
   }
 
   // Send initial room list to newly connected player in lobby
@@ -832,6 +838,12 @@ io.on('connection', (socket) => {
   });
 
   // Throw Tactical Projectile (Frag or Flash)
+  socket.on('use-ability',()=>{
+    const room=rooms.get(currentRoomId), player=room?.players[socket.id];if(!player)return;
+    const result=activateAbility(room,player);if(!result)return;
+    socket.emit('ability-state',result);
+    io.to(currentRoomId).emit('ability-used',{playerId:socket.id,name:result.name,duration:result.duration,health:result.health});
+  });
   socket.on('throw-projectile', (data) => {
     if (!finiteVector(data.origin) || !finiteVector(data.velocity) || !['frag','flash','molotov'].includes(data.type)) return;
     if (!currentRoomId) return;

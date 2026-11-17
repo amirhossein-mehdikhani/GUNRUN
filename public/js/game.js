@@ -1,3 +1,5 @@
+import {ABILITIES} from './abilities.js';
+import { compensateView, decayView, physicsSteps } from './camera-motion.js';
 import { WEAPON_TYPES } from './weapons.js';
 import { playerLoadout } from './loadout.js';
 import { OPERATORS } from './operators.js';
@@ -13,7 +15,7 @@ import { GRAPHICS_PRESETS, resolveGraphics, renderPixelRatio } from './graphics.
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-class GameApp {
+export class GameApp {
   constructor() {
     this.socket = io({ transports: ['websocket', 'polling'], tryAllTransports: true });
     this.localPlayerId = null;
@@ -26,6 +28,8 @@ class GameApp {
     // Three.js Core
     this.scene = null;
     this.camera = null;
+    this.viewOffset = new THREE.Vector3();
+    this.cameraCorrections = {server:0,steps:0,recovery:0};
     this.renderer = null;
     this.controls = null;
     this.clock = new THREE.Clock();
@@ -54,6 +58,8 @@ class GameApp {
     this.moveSpeed = 8.0;
     this.sprintMultiplier = 1.45;
     this.lastSafePos = null;
+    this.viewOffset.set(0,0,0);
+    this.abilityReadyAt=0;
     this._mapSnapDone = false;
 
     // Shooting state
@@ -157,8 +163,12 @@ class GameApp {
     const operatorGrid=document.querySelector('.character-gallery-grid');
     for(const id of ['scout','sentinel','ranger']) {
       const info=OPERATORS[id],card=document.createElement('div');card.className='character-gallery-card';card.dataset.character=id;
-      card.innerHTML=`<div class="character-gallery-thumb-wrap"><img class="character-gallery-thumb" src="${info.img}" alt="${info.title}"><div class="character-selected-badge">✓ ACTIVE</div></div><div class="character-gallery-body"><div class="character-gallery-title">${info.title}</div><div class="character-role-tag">${info.desc}</div><div class="character-gallery-desc">Equal movement, health and hitboxes. Choose your look.</div><button class="character-select-btn">Select Operative</button></div>`;
+      card.innerHTML=`<div class="character-gallery-thumb-wrap"><img class="character-gallery-thumb" src="${info.img}" alt="${info.title}"><div class="character-selected-badge">✓ ACTIVE</div></div><div class="character-gallery-body"><div class="character-gallery-title">${info.title}</div><div class="character-role-tag">${info.desc}</div><div class="character-gallery-desc">${escapeHtml(ABILITIES[id]?.detail || 'Shared movement, health and hitboxes.')}<br><strong>${escapeHtml(ABILITIES[id]?.description || '')}</strong></div><button class="character-select-btn">Select Operative</button></div>`;
       operatorGrid.appendChild(card);
+    }
+    for(const [id,spec] of Object.entries(ABILITIES)) {
+      const desc=operatorGrid.querySelector('[data-character="'+id+'"] .character-gallery-desc');
+      if(desc) desc.textContent=spec.detail+' '+spec.description;
     }
     this.characterGalleryCards = document.querySelectorAll('.character-gallery-card');
     this.homeQuickCharCard = document.getElementById('home-quick-char-card');
@@ -395,6 +405,9 @@ class GameApp {
         case 'Digit2': this.switchWeaponSlot(this.weapon.loadout[1]); break;
         case 'Digit3': this.switchWeaponSlot(4); break;
         case 'Digit4': this.switchWeaponSlot(4); break;
+        case 'KeyQ':
+          if(!e.repeat && this.state==='playing' && this.isAlive && this.controls.isLocked) this.socket.emit('use-ability');
+          break;
         case 'KeyB':
           if (!e.repeat) this._throwTactical('molotov');
           break;
@@ -528,6 +541,22 @@ class GameApp {
     this._throwTactical('flash');
   }
 
+  clearReconMarks() {
+    for(const mark of this.reconMarks||[]) {this.scene.remove(mark.mesh);mark.mesh.geometry.dispose();mark.mesh.material.dispose();}
+    this.reconMarks=[];
+  }
+
+  updateAbilityHud() {
+    const hud=document.getElementById('hud-ability');if(!hud)return;
+    const spec=ABILITIES[this.selectedCharacter];
+    const remaining=Math.max(0,Math.ceil(((this.abilityReadyAt||0)-performance.now())/1000));
+    const text=spec?'Q · '+spec.name+' · '+(remaining?remaining+'s':'READY'):'Q · No active ability';
+    if(hud.textContent!==text) hud.textContent=text;
+    for(let i=(this.reconMarks?.length||0)-1;i>=0;i--) if(performance.now()>this.reconMarks[i].until) {
+      const mark=this.reconMarks.splice(i,1)[0];this.scene.remove(mark.mesh);mark.mesh.geometry.dispose();mark.mesh.material.dispose();
+    }
+  }
+
   updateThrowableHud() {
     const molotovHud=document.getElementById('hud-molotov-count');
     if(molotovHud) molotovHud.textContent=this.molotovCount;
@@ -544,7 +573,7 @@ class GameApp {
     if (!this.currentRoom) return;
     const isHost = (this.currentRoom.hostId === this.localPlayerId);
     const mapNames = {
-      dust2: 'DUST II',
+      killhouse: 'KILLHOUSE', dust2: 'DUST II',
       stalkyard: 'STALKYARD',
       turbine: 'DM-TURBINE',
       frenzy: 'FRENZY',
@@ -817,6 +846,7 @@ class GameApp {
     });
 
     const mapInfoDict = {
+      killhouse: {title:'Killhouse',subtitle:'Lightweight training warehouse recreation',img:'/assets/images/maps/killhouse.png'},
       dust2: { title: 'Dust II', subtitle: 'CS de_dust2 (Counter-Strike)', img: '/assets/images/maps/dust2.jpg' },
       stalkyard: { title: 'Stalkyard', subtitle: 'Half-Life Deathmatch', img: '/assets/images/maps/stalkyard.jpg' },
       turbine: { title: 'DM-Turbine', subtitle: 'Unreal Tournament', img: '/assets/images/maps/turbine.jpg' },
@@ -942,10 +972,24 @@ class GameApp {
 
   initSocketEvents() {
     this.socket.on('movement-corrected', ({position,isCrouching}) => {
+      compensateView(this.viewOffset,this.camera.position,position);
+      this.cameraCorrections.server++;
       this.camera.position.set(position.x,position.y,position.z);
       this.isCrouching = isCrouching;
       this.playerHeight = isCrouching ? 1 : 1.6;
       this.playerVelocity.set(0,0,0);
+    });
+    this.socket.on('ability-state',data=>{
+      this.abilityReadyAt=performance.now()+data.cooldown*1000;this.health=data.health;this.updateHudHealth();
+      this.addFeedItem(escapeHtml(data.name)+' activated');this.reconMarks ||= [];
+      for(const mark of data.marks||[]) {
+        const mesh=new THREE.Mesh(new THREE.OctahedronGeometry(.22),new THREE.MeshBasicMaterial({color:0xff7733,depthTest:false,depthWrite:false,transparent:true,opacity:.9}));
+        mesh.position.set(mark.position.x,mark.position.y+.5,mark.position.z);mesh.renderOrder=99;this.scene.add(mesh);
+        this.reconMarks.push({mesh,until:performance.now()+data.duration*1000});
+      }
+    });
+    this.socket.on('ability-used',data=>{
+      const remote=this.remotePlayers.get(data.playerId);if(remote) {remote.setHealth(data.health);remote.showAbility(data.duration);}
     });
     this.socket.on('hit-confirmed', data => this.triggerHitmarker(data.isHeadshot));
     this.socket.on('weapon-state', data => {
@@ -969,7 +1013,7 @@ class GameApp {
         this._disconnectedRoom = null;
       } else status.hidden = true;
     });
-    this.socket.on('session-restored', ({room,playerId}) => {
+    this.socket.on('session-restored', ({room,playerId,serverTime}) => {
       this.currentRoom = room; this.localPlayerId = playerId; this._disconnectedRoom = null;
       status.hidden = true;
       if (room.status === 'in-game') {
@@ -981,6 +1025,7 @@ class GameApp {
         this.health = me.health; this.isAlive = me.isAlive;
         this.isCrouching = !!me.isCrouching; this.playerHeight = me.isCrouching ? 1 : 1.6;
         if (me.combat) { this.molotovCount=me.combat.molotov ?? 2; this.updateThrowableHud(); this.switchWeaponSlot(me.combat.slot); this.weapon.ammoState = {...me.combat.ammo}; }
+        this.abilityReadyAt=performance.now()+Math.max(0,(me.ability?.readyAt||0)-(serverTime||0));
         this._restoring = false;
         this.updateHudHealth(); this.updateHudAmmo();
       } else if (room.status === 'lobby') this.openWaitingRoom(room, room.hostId === playerId);
@@ -1317,7 +1362,7 @@ class GameApp {
         ? '<span style="color:#f59e0b;font-weight:700">IN-GAME</span>'
         : '<span style="color:#10b981;font-weight:700">OPEN LOBBY</span>';
 
-      const mapNames = { dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
+      const mapNames = { killhouse: 'Killhouse', dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
       const displayMap = mapNames[r.mapId] || 'Dust II';
       const isTdm = r.gameMode === 'tdm';
       const modeBadge = isTdm
@@ -1385,7 +1430,7 @@ class GameApp {
   updateWaitingSettingsSummary() {
     if (!this.currentRoom) return;
     const s = this.currentRoom.settings;
-    const mapNames = { dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
+    const mapNames = { killhouse: 'Killhouse', dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
     const mName = mapNames[s.mapId] || 'Dust II';
     const modeLabel = s.gameMode === 'tdm' ? '2 TEAMS (MAX 5/TEAM)' : 'FREE-FOR-ALL';
     this.waitingSettingsSummary.textContent = `Mode: ${modeLabel} | Map: ${mName.toUpperCase()} | Gravity: ${s.gravity.toUpperCase()} | Limit: ${s.scoreLimit} Kills`;
@@ -1485,6 +1530,7 @@ class GameApp {
     this.remotePlayers.forEach(p => p.destroy());
     this.remotePlayers.clear();
     if (this.projectiles) this.projectiles.clear();
+    this.clearReconMarks();
     this.currentRoom = null;
   }
 
@@ -1492,6 +1538,8 @@ class GameApp {
   // IN-MATCH LOGIC & GAMEPLAY
   // ==========================================
   startMatchSession() {
+    this.abilityReadyAt=0;
+    this.clearReconMarks();
     this.weapon.clearEffects();
     this.state = 'playing';
     this.screenWaiting.classList.add('hidden');
@@ -1504,7 +1552,7 @@ class GameApp {
     this.arenaMap.loadMap(mapId);
 
     const mapNames = {
-      dust2: 'DUST II',
+      killhouse: 'KILLHOUSE', dust2: 'DUST II',
       stalkyard: 'STALKYARD',
       turbine: 'DM-TURBINE',
       frenzy: 'FRENZY',
@@ -1563,6 +1611,7 @@ class GameApp {
 
     this.playerVelocity.set(0, 0, 0);
     this.lastSafePos = null;
+    this.viewOffset.set(0,0,0);
     this._mapSnapDone = false;
     this.health = 100;
     this.isAlive = true;
@@ -1609,6 +1658,11 @@ class GameApp {
   }
 
   handleShoot() {
+    this.camera.position.add(this.viewOffset);this.camera.updateMatrixWorld(true);
+    try {this._handleShoot();} finally {this.camera.position.sub(this.viewOffset);this.camera.updateMatrixWorld(true);}
+  }
+
+  _handleShoot() {
     if (!this.weapon.canShoot()) return;
 
     this.weapon.triggerShootAnimation();
@@ -1747,6 +1801,7 @@ class GameApp {
     this.camera.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
     this.playerVelocity.set(0, 0, 0);
     this.lastSafePos = null;
+    this.viewOffset.set(0,0,0);
     this._mapSnapDone = false;
 
     if (this.state === 'playing') {
@@ -1890,6 +1945,7 @@ class GameApp {
         this.isCrouching = wantsCrouch;
         const oldHeight = this.playerHeight;
         this.playerHeight = wantsCrouch ? 1.0 : 1.6;
+        this.viewOffset.y += oldHeight-this.playerHeight;
         this.camera.position.y = feet + this.playerHeight;
         if (this.lastSafePos) this.lastSafePos.y += this.playerHeight - oldHeight;
       }
@@ -1962,6 +2018,7 @@ class GameApp {
     currentPos.z = resolvedHoriz.z;
 
     const feetY = currentPos.y - this.playerHeight;
+    const wasGrounded=this.isGrounded;
 
     // Check Space Station Anti-Grav Jump Pads
     const jumpPadForce = this.arenaMap.checkJumpPad(currentPos);
@@ -2042,6 +2099,10 @@ class GameApp {
       this.isGrounded = false;
     }
 
+    // Stair correction moves the collision body immediately; ease the rendered eye only.
+    if(wasGrounded && this.isGrounded && Math.abs(currentPos.y-prevY)>.015 && Math.abs(currentPos.y-prevY)<=.55) {
+      this.viewOffset.y+=prevY-currentPos.y;this.cameraCorrections.steps++;
+    }
     // Record last verified safe grounded position on solid map geometry
     if (
       this.isGrounded &&
@@ -2059,6 +2120,7 @@ class GameApp {
       !this.arenaMap.hasFloorBelow(currentPos.x, currentPos.y - this.playerHeight, currentPos.z)
     );
     if (outOfBounds || fallingIntoVoid) {
+      this.viewOffset.set(0,0,0);this.cameraCorrections.recovery++;
       const recovery = this.lastSafePos || this.arenaMap.getRandomSpawn();
       currentPos.set(recovery.x, recovery.y, recovery.z);
       this.playerVelocity.set(0, 0, 0);
@@ -2134,7 +2196,7 @@ class GameApp {
     if (stats.elapsed >= 0.5) {
       if (this.hudFps) {
         this.hudFps.textContent = `${Math.round(stats.frames / stats.elapsed)} FPS`;
-        this.hudFps.title = `Worst frame: ${stats.maxMs.toFixed(1)}ms | Frames over 33ms: ${stats.slowFrames} | Draw calls: ${this.renderer.info.render.calls} | Triangles: ${this.renderer.info.render.triangles}`;
+        this.hudFps.title = `Worst frame: ${stats.maxMs.toFixed(1)}ms | Frames over 33ms: ${stats.slowFrames} | Camera corrections: ${this.cameraCorrections.server} server / ${this.cameraCorrections.steps} steps / ${this.cameraCorrections.recovery} recovery | Draw calls: ${this.renderer.info.render.calls} | Triangles: ${this.renderer.info.render.triangles}`;
       }
       if (this.hudPing) {
         const transport = this.socket.io.engine?.transport?.name || 'connecting';
@@ -2147,7 +2209,10 @@ class GameApp {
     }
 
     if (this.state === 'playing') {
-      this.updatePhysics(delta);
+      decayView(this.viewOffset,delta);
+      const steps=physicsSteps(delta);
+      for(let i=0;i<steps;i++) this.updatePhysics(delta/steps);
+      this.updateAbilityHud?.();
     }
 
     this.remotePlayers.forEach((player) => {
@@ -2164,7 +2229,9 @@ class GameApp {
       this.camera.position.y += shakeY;
     }
 
+    this.camera.position.add(this.viewOffset);
     this.renderer.render(this.scene, this.camera);
+    this.camera.position.sub(this.viewOffset);
 
     if (shakeX !== 0 || shakeY !== 0) {
       this.camera.position.x -= shakeX;
@@ -2173,6 +2240,6 @@ class GameApp {
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+if(typeof window!=='undefined') window.addEventListener('DOMContentLoaded', () => {
   new GameApp();
 });

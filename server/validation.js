@@ -1,7 +1,7 @@
 import { validLoadout } from '../public/js/loadout.js';
 import { OPERATORS } from '../public/js/operators.js';
 import { WEAPON_TYPES } from '../public/js/weapons.js';
-const maps = ['dust2','stalkyard','turbine','frenzy','italy'];
+const maps = ['killhouse','dust2','stalkyard','turbine','frenzy','italy'];
 export const cleanName = (value, fallback, length) => typeof value === 'string'
   ? value.replace(/[<>\x00-\x1f\x7f]/g, '').trim().slice(0,length) || fallback : fallback;
 export function cleanSettings(value = {}) {

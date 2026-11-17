@@ -1,3 +1,4 @@
+import {createKillhouse,worldTriangles} from '../public/js/killhouse.js';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Box3, Vector3 } from 'three';
@@ -40,3 +41,7 @@ for (const [id, [file, scale]] of Object.entries(maps)) {
   await writeFile(`public/assets/collision/${id}.bin`, Buffer.from(data.buffer));
   console.log(`${id}: ${data.length / 9} triangles`);
 }
+
+const killhouse=worldTriangles(createKillhouse());
+await writeFile('public/assets/collision/killhouse.bin',Buffer.from(killhouse.buffer));
+console.log(`killhouse: ${killhouse.length/9} triangles`);

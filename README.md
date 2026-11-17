@@ -263,3 +263,11 @@ sudo ufw reload
 
 ---
 **توسعه‌یافته با افتخار برای علاقه‌مندان به بازی‌های شوتر اول شخص و شبکه‌ای آفلاین.** 🎯🔥
+
+## Operator abilities and Killhouse
+
+Press **Q** to use the selected operator ability. Pathfinder marks enemy positions within 18m for 3 seconds (25s cooldown); Sentinel reduces damage 25% for 5 seconds (22s cooldown); Desert Ranger heals up to 30 health (25s cooldown); Titan reduces damage 40% for 3 seconds (30s cooldown). The server owns cooldowns, healing and damage reduction. Respawning clears active armor and preserves cooldowns. All operators keep the same movement speed and hit volumes.
+
+Killhouse is an original lightweight recreation inspired by the training warehouse layout, not an extracted COD Mobile asset or a claimed exact replica. It includes a central observation tower, stairs, raised bases, containers, plywood cover and side lanes. Rendered and server collision geometry come from the same factory; it uses 1,356 triangles and 8 material batches with no downloaded textures. Download candidates were checked first: the Sketchfab model was not downloadable and its download endpoint returned 401; no direct model archive was exposed by the CGTrader page.
+
+Camera stair/crouch changes and small server corrections now ease the rendered eye while applying physical collision changes immediately. Physics uses steps of at most 1/60s to reduce low-FPS collision jumps. Large teleports and respawns reset camera easing. Hover the FPS counter for server/step/recovery correction counts when diagnosing a remaining jump.

@@ -28,3 +28,7 @@ License deed: https://creativecommons.org/publicdomain/zero/1.0/
 - `npm run download-assets` restores missing new assets from the pinned source and checks their hashes. It no longer substitutes a soldier model for a missing Dust II map.
 
 Earlier Soldier, RobotExpressive and Xbot models retain their existing sources; this document records the newly imported models rather than reassigning their licenses.
+
+## Killhouse recreation
+
+`public/js/killhouse.js` is original code-built geometry, inspired by the training warehouse described in [Activision’s Killhouse map guide](https://blog.activision.com/call-of-duty/2019-10/Call-of-Duty-Mobile-Map-Snapshot-Killhouse). No COD assets or third-party map meshes are bundled. The thumbnail is a roofless overview render of this geometry. It is a lightweight recreation, not an exact COD Mobile map import.

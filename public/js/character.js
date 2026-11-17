@@ -493,7 +493,17 @@ export class RemotePlayer {
     this.movementBuffer?.push(pos, rot.yaw, performance.now(), isCrouching);
   }
 
+  showAbility(duration) {
+    if(!duration)return;
+    if(!this.abilityRing) {
+      this.abilityRing=new THREE.Mesh(new THREE.TorusGeometry(.65,.025,6,24),new THREE.MeshBasicMaterial({color:0x38dbed,transparent:true,opacity:.8}));
+      this.abilityRing.rotation.x=Math.PI/2;this.abilityRing.position.y=-.7;this.group.add(this.abilityRing);
+    }
+    this.abilityRing.visible=true;this.abilityRemaining=duration;
+  }
+
   update(delta) {
+    if(this.abilityRing) {this.abilityRemaining-=delta;this.abilityRing.visible=this.abilityRemaining>0;this.abilityRing.rotation.z+=delta;}
     if (this.movementBuffer?.sample(performance.now(), this.bufferedTransform)) {
       const pose = this.bufferedTransform;
       this.group.position.set(pose.x, pose.y, pose.z);

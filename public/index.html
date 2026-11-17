@@ -110,6 +110,7 @@
               <div class="character-card" data-character="heavy"></div>
             </div>
             <div id="map-selector" style="display:none;">
+              <div class="map-card" data-map="killhouse"></div>
               <div class="map-card selected" data-map="dust2"></div>
               <div class="map-card" data-map="stalkyard"></div>
               <div class="map-card" data-map="turbine"></div>
@@ -198,6 +199,7 @@
           </div>
 
           <div class="map-gallery-grid">
+            <div class="map-gallery-card" data-map="killhouse"><div class="map-gallery-thumb-wrap"><img src="/assets/images/maps/killhouse.png" class="map-gallery-thumb" alt="Killhouse recreation"><div class="map-selected-badge">✓ SELECTED</div></div><div class="map-gallery-body"><div class="map-gallery-header"><div class="map-gallery-title">Killhouse</div><div class="map-game-tag">Recreation</div></div><div class="map-badge-row"><span class="map-chip">Compact warehouse</span><span class="map-chip">Lightweight</span></div><div class="map-gallery-desc">Training warehouse with a central watchtower, raised spawn platforms, containers and close-range cover. Original lightweight recreation inspired by Killhouse.</div><button class="map-select-btn">Select Arena</button></div></div>
             <!-- 1. Dust II -->
             <div class="map-gallery-card selected" data-map="dust2">
               <div class="map-gallery-thumb-wrap">
@@ -454,7 +456,7 @@
             <option value="tdm">2 Teams (Max 5 / Team)</option>
           </select>
         </div>
-        <div class="map-grid" id="waiting-map-selector" style="margin-top: 8px;">
+        <div class="map-grid" id="waiting-map-selector" style="margin-top: 8px;"><div class="map-card" data-map="killhouse"><img src="/assets/images/maps/killhouse.png" class="waiting-map-thumb" alt="Killhouse"><div class="map-title">Killhouse</div></div>
           <div class="map-card" data-map="dust2">
             <img src="/assets/images/maps/dust2.jpg" class="waiting-map-thumb" alt="Dust II">
             <div class="map-title">Dust II</div>
@@ -644,6 +646,7 @@
       <div class="loadout-slot throwable-slot" title="Molotov (B)"><span class="slot-key">B</span><span class="slot-icon">🔥</span><span class="slot-count" id="hud-molotov-count">2</span></div>
     </div>
 
+    <div id="hud-ability" style="position:absolute;bottom:92px;right:24px;color:#6ee7df;font-weight:700;font-size:12px;"></div>
     <!-- Bottom Left: Health -->
     <div class="hud-health-wrap">
       <div id="hud-health-val" class="health-number-box">100</div>

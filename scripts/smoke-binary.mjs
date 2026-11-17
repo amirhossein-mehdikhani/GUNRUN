@@ -30,7 +30,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   assert.ok(ready, 'Standalone server did not start');
-  for (const asset of ['/style.css', '/js/game.js', '/js/graphics.js', '/js/weapons.js', '/js/resources.js', '/js/spatial-index.js', '/assets/collision/dust2.bin', '/js/movement-buffer.js', '/socket.io/socket.io.js', '/node_modules/three/build/three.module.js', '/node_modules/three/examples/jsm/controls/PointerLockControls.js', '/assets/models/Soldier.glb', '/assets/models/Pathfinder.glb', '/assets/models/TitanMech.glb', '/assets/models/AnimationRig.glb', '/assets/models/VectorSMG.glb', '/assets/images/characters/cyborg.png', '/assets/images/characters/soldier.png', '/js/projectiles.js', '/js/model-utils.js']) {
+  for (const asset of ['/style.css', '/js/game.js', '/js/graphics.js', '/js/weapons.js', '/js/resources.js', '/js/spatial-index.js', '/assets/collision/dust2.bin', '/js/movement-buffer.js', '/socket.io/socket.io.js', '/node_modules/three/build/three.module.js', '/node_modules/three/examples/jsm/controls/PointerLockControls.js', '/assets/models/Soldier.glb', '/assets/models/Pathfinder.glb', '/assets/models/TitanMech.glb', '/assets/models/AnimationRig.glb', '/assets/models/VectorSMG.glb', '/assets/images/characters/cyborg.png', '/assets/images/characters/soldier.png', '/js/projectiles.js', '/js/model-utils.js', '/js/camera-motion.js', '/js/abilities.js', '/js/killhouse.js', '/assets/images/maps/killhouse.png', '/assets/collision/killhouse.bin']) {
     const response = await fetch(base + asset);
     assert.equal(response.status, 200, asset);
     assert.ok((await response.arrayBuffer()).byteLength > 100, `${asset} was empty`);
@@ -48,7 +48,12 @@ try {
     socket.on('room-created', () => socket.emit('start-match'));
     socket.on('join-error', error => { clearTimeout(timer); reject(new Error(error)); });
     socket.on('match-started', () => { clearTimeout(timer); resolve(); });
-    socket.emit('create-room', {playerName:'Smoke test',settings:{mapId:'dust2'}});
+    socket.emit('create-room', {playerName:'Smoke test',characterType:'sentinel',settings:{mapId:'killhouse'}});
+  });
+  await new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(new Error('Packaged ability activation timed out')),5000);
+    socket.once('ability-state',data=>{clearTimeout(timer);data.name==='Guard'?resolve():reject(new Error('Invalid packaged ability'));});
+    socket.emit('use-ability');
   });
   console.log('Standalone binary: HTTP, embedded assets and WebSocket passed.');
 } catch (error) {
