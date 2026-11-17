@@ -1,3 +1,4 @@
+import { playerLoadout, allowedWeapon } from './public/js/loadout.js';
 // server.js - RUNGUN LAN Multiplayer FPS Server
 import express from 'express';
 import { assetHandler } from './server/assets.js';
@@ -316,7 +317,7 @@ function assignMatchStartSpawns(room) {
     const sp = isTdm
       ? getTeamSpawn(mapId, player.team, player.team === 'red' ? redSlot++ : blueSlot++)
       : getFarthestSpawn(mapId, placedPositions);
-    resetInventory(player, 1);
+    resetInventory(player, playerLoadout(player.loadout)[0]);
     player.isCrouching = false;
     player.health = 100;
     player.kills = 0;
@@ -577,7 +578,7 @@ io.on('connection', (socket) => {
   });
 
   // Create a room
-  socket.on('create-room', ({ roomName, playerName, playerColor, characterType, settings }) => {
+  socket.on('create-room', ({ roomName, playerName, playerColor, characterType, loadout, settings }) => {
     if (currentRoomId) return;
     const roomId = 'room_' + Math.random().toString(36).substring(2, 8);
     const chosenMap = settings?.mapId || 'dust2';
@@ -609,6 +610,7 @@ io.on('connection', (socket) => {
           color: playerColor || '#3b82f6',
           team: hostTeam,
           characterType: characterType || 'soldier',
+      loadout: playerLoadout(loadout),
           isHost: true,
           health: 100,
           kills: 0,
@@ -636,7 +638,7 @@ io.on('connection', (socket) => {
   });
 
   // Join an existing room
-  socket.on('join-room', ({ roomId, playerName, playerColor, characterType, preferredTeam }) => {
+  socket.on('join-room', ({ roomId, playerName, playerColor, characterType, loadout, preferredTeam }) => {
     if (currentRoomId) return;
     const room = rooms.get(roomId);
     if (!room) {
@@ -670,6 +672,7 @@ io.on('connection', (socket) => {
       color: playerColor || '#10b981',
       team: assignedTeam,
       characterType: characterType || 'soldier',
+      loadout: playerLoadout(loadout),
       isHost: false,
       health: 100,
       kills: 0,
@@ -817,6 +820,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(currentRoomId);
     if (!room || !room.players[socket.id]) return;
 
+    if (!allowedWeapon(room.players[socket.id],slot)) return;
     switchGun(room.players[socket.id], slot, performance.now());
     room.players[socket.id].activeWeaponSlot = slot;
     socket.to(currentRoomId).emit('player-weapon-switched', {

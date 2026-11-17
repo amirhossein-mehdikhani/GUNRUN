@@ -4,6 +4,10 @@ Release automation: [build and publish guide](RELEASING.md). Development finding
 
 Implemented reliability work: [server-side shooting, cleanup, asset serving, spatial queries and reconnection](QUALITY_IMPROVEMENTS.md). Refresh all players' browser tabs after upgrading so the client and server protocols match.
 
+Choose exactly two different firearms in the main menu before hosting or joining. Keys **1** and **2** equip your chosen guns; **3** equips the knife. The mouse wheel cycles only these three items. Loadouts persist through respawns and reconnects and cannot be changed during a match.
+
+The arsenal now includes Assault Rifle, DMR, Heavy Sniper, Vector SMG, Slug Shotgun (single powerful projectile), Tactical Pistol and Support LMG. New cosmetic operators are Pathfinder, Sentinel and Desert Ranger; all operators share the same gameplay stats and hitbox sizes.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg)](#)
 [![Stack](https://img.shields.io/badge/Tech%20Stack-Node.js%20%7C%20Socket.io%20%7C%20Three.js-orange.svg)](#)
@@ -33,7 +37,7 @@ Any player can host a match with a single click, and friends on the same Wi-Fi c
   - ⚡ **DM-Turbine (`turbine`)**: *Legendary Unreal Tournament Arena* featuring high-tech industrial architecture, central turbine chamber, multi-level combat walkways, and sniper perches.
   - 🔥 **Frenzy (`frenzy`)**: *High-Octane Half-Life Crossfire Arena* featuring central courtyard, fortress bunkers, subterranean passages, and rooftop vantage points.
   - 🏛️ **cs_italy (`italy`)**: *Iconic Counter-Strike Italy Map* featuring the famous marketplace, narrow cobblestone alleys, wine cellar, archways, and hostage apartments in full 3D.
-- **Character Selection (4 Playable Models)**:
+- **Character Selection (7 Playable Operators)**:
   - 🪖 **Tactical Soldier**: Camouflage military combatant.
   - 🤖 **Cyber Robot**: High-tech articulated mech with expressive animations.
   - 🦾 **Spec-Ops Cyborg (Xbot)**: Agile android operative.
@@ -65,11 +69,11 @@ Any player can host a match with a single click, and friends on the same Wi-Fi c
 | **`Left-Click`** | **Primary Fire** | Shoot weapon (Auto-fire for Rifle, Slash for Knife) |
 | **`Right-Click`** | **Sniper Scope** | Toggle high-magnification optical scope zoom (Sniper only) |
 | **`R`** | **Reload** | Manually reload current weapon magazine |
-| **`1`** | **Assault Rifle** | Equip full-auto primary rifle |
-| **`2`** | **Semi-Auto DMR** | Equip semi-automatic marksman rifle |
-| **`3`** | **Sniper Rifle** | Equip heavy long-range sniper rifle |
-| **`4`** | **Combat Knife** | Equip combat knife (+15% run speed bonus) |
-| **`Mouse Wheel`** | **Cycle Weapons** | Scroll up/down to switch between weapons 1 through 4 |
+| **`1`** | **Gun 1** | Equip your first selected firearm |
+| **`2`** | **Gun 2** | Equip your second selected firearm |
+| **`3`** | **Combat Knife** | Equip your knife |
+
+| **`Mouse Wheel`** | **Cycle Weapons** | Scroll up/down to cycle your two selected guns and knife |
 | **`G`** | **Frag Grenade** | Throw explosive fragmentation grenade (2 available) |
 | **`F`** | **Flashbang** | Throw tactical flashbang grenade (2 available) |
 | **`Tab`** (Hold) | **Scoreboard** | View real-time player rankings, Kills, Deaths, and Ping |

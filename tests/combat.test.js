@@ -4,7 +4,7 @@ import { TriangleIndex } from '../public/js/spatial-index.js';
 import { resetInventory, validateShot, startReload, switchGun, finishReload } from '../server/combat.js';
 
 function fixture() {
-  const shooter={id:'a',isAlive:true,position:{x:0,y:1.6,z:0},rotation:{yaw:0}};
+  const shooter={loadout:[1,3],id:'a',isAlive:true,position:{x:0,y:1.6,z:0},rotation:{yaw:0}};
   const victim={id:'b',isAlive:true,position:{x:0,y:1.6,z:5},rotation:{yaw:0}};
   resetInventory(shooter); resetInventory(victim);
   return {shooter,victim,room:{status:'in-game',settings:{gameMode:'ffa'},players:{a:shooter,b:victim}},

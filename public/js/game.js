@@ -1,3 +1,6 @@
+import { WEAPON_TYPES } from './weapons.js';
+import { playerLoadout } from './loadout.js';
+import { OPERATORS } from './operators.js';
 // game.js - Core FPS Game Engine: Multi-Weapon Loadout, Tactical Grenades, Pause Menu & End-Match Systems
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
@@ -65,6 +68,8 @@ class GameApp {
 
     // Selections
     this.selectedCharacter = 'soldier';
+    this.selectedLoadout = [1,2];
+    try { this.selectedLoadout = playerLoadout(JSON.parse(localStorage.getItem('rungun-loadout'))); } catch {}
     this.selectedMap = 'dust2';
     this.selectedColor = '#3b82f6';
 
@@ -148,6 +153,12 @@ class GameApp {
     this.tabPillMap = document.getElementById('tab-pill-map');
     this.tabPillChar = document.getElementById('tab-pill-char');
     this.mapGalleryCards = document.querySelectorAll('.map-gallery-card');
+    const operatorGrid=document.querySelector('.character-gallery-grid');
+    for(const id of ['scout','sentinel','ranger']) {
+      const info=OPERATORS[id],card=document.createElement('div');card.className='character-gallery-card';card.dataset.character=id;
+      card.innerHTML=`<div class="character-gallery-thumb-wrap"><img class="character-gallery-thumb" src="${info.img}" alt="${info.title}"><div class="character-selected-badge">✓ ACTIVE</div></div><div class="character-gallery-body"><div class="character-gallery-title">${info.title}</div><div class="character-role-tag">${info.desc}</div><div class="character-gallery-desc">Equal movement, health and hitboxes. Choose your look.</div><button class="character-select-btn">Select Operative</button></div>`;
+      operatorGrid.appendChild(card);
+    }
     this.characterGalleryCards = document.querySelectorAll('.character-gallery-card');
     this.homeQuickCharCard = document.getElementById('home-quick-char-card');
     this.homeQuickCharImg = document.getElementById('home-quick-char-img');
@@ -316,7 +327,7 @@ class GameApp {
         this.handleShoot();
       } else if (e.button === 2) {
         // Right Click: Toggle Sniper Scope Zoom
-        if (this.weapon.currentSlot === 3) {
+        if (this.weapon.config.hasScope) {
           const isScoped = this.weapon.toggleScope();
           this.sniperScopeOverlay.classList.toggle('hidden', !isScoped);
           this.crosshairElem.style.display = isScoped ? 'none' : 'block';
@@ -333,9 +344,8 @@ class GameApp {
     // Mouse Wheel weapon cycle
     window.addEventListener('wheel', (e) => {
       if (!this.controls.isLocked || this.state !== 'playing' || !this.isAlive) return;
-      let nextSlot = this.weapon.currentSlot + (e.deltaY > 0 ? 1 : -1);
-      if (nextSlot > 4) nextSlot = 1;
-      if (nextSlot < 1) nextSlot = 4;
+      const slots=[...this.weapon.loadout,4];
+      const nextSlot=slots[(slots.indexOf(this.weapon.currentSlot)+(e.deltaY>0?1:2))%3];
       this.switchWeaponSlot(nextSlot);
     });
 
@@ -380,9 +390,9 @@ class GameApp {
             this.updateHudAmmo();
           }
           break;
-        case 'Digit1': this.switchWeaponSlot(1); break;
-        case 'Digit2': this.switchWeaponSlot(2); break;
-        case 'Digit3': this.switchWeaponSlot(3); break;
+        case 'Digit1': this.switchWeaponSlot(this.weapon.loadout[0]); break;
+        case 'Digit2': this.switchWeaponSlot(this.weapon.loadout[1]); break;
+        case 'Digit3': this.switchWeaponSlot(4); break;
         case 'Digit4': this.switchWeaponSlot(4); break;
         case 'KeyG':
           if (this.state === 'playing' && this.controls.isLocked) e.preventDefault();
@@ -417,7 +427,7 @@ class GameApp {
   // WEAPON LOADOUT & TACTICAL THROWABLES
   // ==========================================
   switchWeaponSlot(slotIndex) {
-    if (this.weapon.currentSlot === slotIndex) return;
+    if ((!this.weapon.loadout.includes(slotIndex) && slotIndex!==4) || this.weapon.currentSlot === slotIndex) return;
 
     // Reset scope if leaving sniper
     if (this.weapon.isScoped) {
@@ -549,6 +559,16 @@ class GameApp {
   }
 
   initLobbyUI() {
+    const choices=[document.getElementById('loadout-primary'),document.getElementById('loadout-secondary')];
+    choices.forEach((select,index)=>{
+      select.value=String(this.selectedLoadout[index]);
+      select.addEventListener('change',()=>{
+        const previous=this.selectedLoadout[index],id=Number(select.value);
+        if(id===this.selectedLoadout[1-index]) { this.selectedLoadout[1-index]=previous; choices[1-index].value=String(previous); }
+        this.selectedLoadout[index]=id;
+        try { localStorage.setItem('rungun-loadout',JSON.stringify(this.selectedLoadout)); } catch {}
+      });
+    });
     const graphicsSelect = document.getElementById('graphics-quality');
     graphicsSelect.value = this.graphicsMode;
     graphicsSelect.addEventListener('change', () => {
@@ -670,7 +690,8 @@ class GameApp {
         roomName,
         playerName,
         playerColor: this.selectedColor,
-        characterType: this.selectedCharacter,
+        loadout: this.selectedLoadout,
+          characterType: this.selectedCharacter,
         settings: {
           mapId: this.selectedMap,
           gameMode,
@@ -807,7 +828,8 @@ class GameApp {
       soldier: { title: 'Soldier', desc: 'Tactical Commando', img: '/assets/images/characters/soldier.jpg' },
       robot: { title: 'Cyber Mech', desc: 'Recon Droid', img: '/assets/images/characters/robot.jpg' },
       cyborg: { title: 'Cyborg', desc: 'Spec-Ops Android (Xbot)', img: '/assets/images/characters/cyborg.jpg' },
-      heavy: { title: 'Titan Mech', desc: 'Heavy Juggernaut', img: '/assets/images/characters/heavy.jpg' }
+      ...OPERATORS,
+      heavy: OPERATORS.heavy
     };
 
     const info = charInfoDict[charId] || charInfoDict.soldier;
@@ -966,7 +988,8 @@ class GameApp {
       this.currentRoom = room;
       status.hidden = true;
       const isHost = (room.hostId === playerId);
-      this.openWaitingRoom(room, isHost);
+      if (room.status === 'in-game') this.startMatchSession();
+      else this.openWaitingRoom(room, isHost);
     });
 
     this.socket.on('join-error', (msg) => {
@@ -1296,6 +1319,7 @@ class GameApp {
           roomId: r.id,
           playerName: playerName,
           playerColor: this.selectedColor,
+          loadout: this.selectedLoadout,
           characterType: this.selectedCharacter
         });
       });
@@ -1363,7 +1387,7 @@ class GameApp {
   updateWaitingPlayerList() {
     if (!this.currentRoom) return;
     const players = Object.values(this.currentRoom.players);
-    const charIcons = { soldier: '🎖️', robot: '🤖', cyborg: '🦾', heavy: '🛡️' };
+    const charIcons = { scout:'🛰️ Pathfinder',sentinel:'🛡️ Sentinel',ranger:'🏜️ Ranger', soldier: '🎖️', robot: '🤖', cyborg: '🦾', heavy: '🛡️' };
     const isTdm = this.currentRoom.settings?.gameMode === 'tdm';
 
     if (this.waitingFfaContainer && this.waitingTeamsContainer) {
@@ -1489,6 +1513,14 @@ class GameApp {
     }
 
     // 3. Reset throwables, ammo & position
+    this.weapon.configureLoadout(this.currentRoom.players[this.localPlayerId].loadout);
+    this.loadoutSlots.forEach((element,index)=>{
+      const id=index<2?this.weapon.loadout[index]:4;
+      element.dataset.slot=String(id);
+      element.querySelector('.slot-name').textContent=WEAPON_TYPES[id].name;
+      element.querySelector('.slot-key').textContent=String(index+1);
+      element.classList.toggle('active',index===0);
+    });
     this.weapon.resetAmmo();
     this.playerHeight = 1.6;
     this.isCrouching = false;
@@ -1512,7 +1544,9 @@ class GameApp {
     this.updateHudHealth();
 
     // Default to Slot 1 (Assault Rifle)
-    this.switchWeaponSlot(1);
+    this.switchWeaponSlot(this.weapon.loadout[0]);
+    this.updateHudAmmo();
+    this.hudWeaponName.textContent = `${this.weapon.config.name.toUpperCase()} - ${this.weapon.config.code}`;
 
     // 4. Instantiate remote characters & initialize HUD score
     this.remotePlayers.forEach(p => p.destroy());
@@ -1747,7 +1781,7 @@ class GameApp {
     this.scoreboardBody.innerHTML = '';
     scoreboard.sort((a, b) => b.kills - a.kills);
 
-    const charIcons = { soldier: '🎖️ Soldier', robot: '🤖 Cyber Mech', cyborg: '🦾 Cyborg', heavy: '🛡️ Titan' };
+    const charIcons = { scout:'🛰️ Pathfinder',sentinel:'🛡️ Sentinel',ranger:'🏜️ Ranger', soldier: '🎖️ Soldier', robot: '🤖 Cyber Mech', cyborg: '🦾 Cyborg', heavy: '🛡️ Titan' };
 
     scoreboard.forEach((p) => {
       const tr = document.createElement('tr');
@@ -1784,7 +1818,7 @@ class GameApp {
     if (!scoreboard || !this.finalScoreboardBody) return;
     this.finalScoreboardBody.innerHTML = '';
 
-    const charIcons = { soldier: '🎖️ Soldier', robot: '🤖 Cyber Mech', cyborg: '🦾 Cyborg', heavy: '🛡️ Titan' };
+    const charIcons = { scout:'🛰️ Pathfinder',sentinel:'🛡️ Sentinel',ranger:'🏜️ Ranger', soldier: '🎖️ Soldier', robot: '🤖 Cyber Mech', cyborg: '🦾 Cyborg', heavy: '🛡️ Titan' };
 
     scoreboard.forEach((p) => {
       const tr = document.createElement('tr');

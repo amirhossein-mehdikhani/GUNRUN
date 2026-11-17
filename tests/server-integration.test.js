@@ -47,7 +47,7 @@ test('room validation, active match, malformed packets, concurrent asset loading
   guest=io(base,{autoConnect:false,transports:['websocket'],reconnectionDelay:20});
   const connected=[event(host,'connect'),event(guest,'connect')]; host.connect();guest.connect(); await Promise.all(connected);
   let pending=event(host,'room-created');
-  host.emit('create-room',{playerName:42,roomName:'<img> Test',playerColor:'bad',settings:{mapId:'INVALID',scoreLimit:'NaN'}});
+  host.emit('create-room',{playerName:42,roomName:'<img> Test',playerColor:'bad',loadout:[1,5],settings:{mapId:'INVALID',scoreLimit:'NaN'}});
   const created=await pending; assert.equal(created.room.settings.mapId,'dust2'); assert.equal(created.room.hostName,'Player');
   pending=event(guest,'room-joined'); guest.emit('join-room',{roomId:created.room.id,playerName:'Guest'}); await pending;
   // Collision indexes build during server startup; by this point they must be ready.
@@ -67,6 +67,9 @@ test('room validation, active match, malformed packets, concurrent asset loading
   assert.equal(host.id,oldId); assert.equal(restored.playerId,oldId); assert.equal(restored.room.status,'in-game');
   assert.ok(restored.room.players[oldId]); assert.equal(host.recovered,true);
   assert.equal(restored.room.players[oldId].combat.ammo[1],29);
+  assert.deepEqual(restored.room.players[oldId].loadout,[1,5]);
+  assert.equal(restored.room.players[oldId].combat.ammo[5],32);
+  assert.equal(restored.room.players[oldId].combat.ammo[2],undefined);
   assert.equal(restored.room.players[guest.id].health,100,'Forged headshot claim applied');
   pending=event(guest,'player-left-room'); host.emit('leave-room'); assert.equal((await pending).playerId,oldId);
 });

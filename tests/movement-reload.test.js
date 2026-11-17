@@ -81,7 +81,7 @@ test('reload fills its magazine, and a cancelled callback cannot refill another 
   assert.equal(weapon.currentAmmo, 0);
   weapon.reload();
   weapon.resetAmmo();
-  assert.deepEqual(weapon.ammoState, {1:30, 2:12, 3:5, 4:999});
+  assert.deepEqual(weapon.ammoState, {1:30, 2:12, 4:999});
   assert.equal(weapon.isReloading, false);
   assert.equal(weapon.currentSlot, 2);
   // A pending reload from before respawn must not overwrite the new life's ammo.

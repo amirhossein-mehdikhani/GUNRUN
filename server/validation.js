@@ -1,3 +1,6 @@
+import { validLoadout } from '../public/js/loadout.js';
+import { OPERATORS } from '../public/js/operators.js';
+import { WEAPON_TYPES } from '../public/js/weapons.js';
 const maps = ['dust2','stalkyard','turbine','frenzy','italy'];
 export const cleanName = (value, fallback, length) => typeof value === 'string'
   ? value.replace(/[<>\x00-\x1f\x7f]/g, '').trim().slice(0,length) || fallback : fallback;
@@ -21,10 +24,11 @@ export function validatePacket(packet) {
     payload.playerName = cleanName(payload.playerName,'Player',16);
     payload.roomName = cleanName(payload.roomName,'Tactical Arena',24);
     payload.playerColor = typeof payload.playerColor === 'string' && /^#[a-fA-F0-9]{6}$/.test(payload.playerColor) ? payload.playerColor : '#3b82f6';
-    payload.characterType = ['soldier','robot','cyborg','heavy'].includes(payload.characterType) ? payload.characterType : 'soldier';
+    if (payload.loadout !== undefined && !validLoadout(payload.loadout)) return false;
+    payload.characterType = typeof payload.characterType === 'string' && Object.hasOwn(OPERATORS,payload.characterType) ? payload.characterType : 'soldier';
   }
   if (event === 'create-room' || event === 'update-room-settings') payload.settings = cleanSettings(payload.settings);
   if (event === 'join-room' && (typeof payload.roomId !== 'string' || payload.roomId.length > 40)) return false;
-  if (event === 'weapon-switch' && ![1,2,3,4].includes(payload.slot)) return false;
+  if (event === 'weapon-switch' && (!Number.isInteger(payload.slot) || !Object.hasOwn(WEAPON_TYPES,payload.slot))) return false;
   return true;
 }

@@ -1878,3 +1878,6 @@ body, html {
 }
 
 #connection-status { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000; padding: 12px 20px; background: #172033; border: 1px solid #f59e0b; color: white; border-radius: 6px; text-align: center; }
+
+.loadout-picker { margin: 16px 0; padding: 16px; border: 1px solid var(--panel-border); border-radius: 6px; }
+.loadout-note { color: var(--text-dim); font-size: 12px; line-height: 1.6; }

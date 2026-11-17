@@ -1,3 +1,4 @@
+import { playerLoadout, fullMagazines } from './loadout.js';
 // weapon.js - Multi-Weapon Loadout Engine: Assault Rifle, Semi-Auto DMR, Sniper Rifle, & Combat Knife
 import * as THREE from 'three';
 import { SoundEffects } from './audio.js';
@@ -11,6 +12,7 @@ export class WeaponController {
     this.scene = scene;
 
     this.rootGroup = new THREE.Group();
+    this.loadout = [1,2];
     this.currentSlot = 1;
     this.isScoped = false;
     this.isReloading = false;
@@ -62,9 +64,34 @@ export class WeaponController {
     this.weaponMeshes[3] = this.buildSniperRifle();
     this.weaponMeshes[4] = this.buildCombatKnife();
 
-    for (let slot = 1; slot <= 4; slot++) {
+    for (const id of [5,6,7,8]) this.weaponMeshes[id] = this.buildExtraGun(id);
+    for (const slot of Object.keys(this.weaponMeshes)) {
       this.rootGroup.add(this.weaponMeshes[slot]);
     }
+  }
+
+  configureLoadout(ids) {
+    this.loadout = playerLoadout(ids);
+    this.ammoState = fullMagazines(this.loadout);
+    this.equipSlot(this.loadout[0],false);
+  }
+
+  buildExtraGun(id) {
+    const group=new THREE.Group();
+    const colors={5:0x0891b2,6:0xb45309,7:0x475569,8:0x4d7c0f};
+    const body=new THREE.MeshStandardMaterial({color:colors[id],metalness:.65,roughness:.4});
+    const dark=new THREE.MeshStandardMaterial({color:0x151923,metalness:.5,roughness:.5});
+    const length=id===7?.22:id===5?.32:id===6?.58:.7;
+    const add=(w,h,d,x,y,z,mat=body)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);group.add(m);return m;};
+    add(.075,.095,length,0,0,0);
+    add(.04,.12,.065,0,-.08,length*.27,dark);
+    add(.04,id===8?.16:.12,id===8?.16:.065,0,-.09,-.02,dark);
+    if(id!==7) add(.05,.055,.18,0,0,length/2+.06,dark);
+    if(id===6) add(.085,.065,.16,0,-.03,-length*.25,dark);
+    if(id===8) {add(.02,.18,.025,-.06,-.1,-length*.35,dark);add(.02,.18,.025,.06,-.1,-length*.35,dark);}
+    const flash=this.createMuzzleFlash();flash.position.set(0,.02,-length/2-.03);group.add(flash);
+    group.userData.muzzleFlash=flash;group.userData.muzzlePos=flash.position.clone();
+    return group;
   }
 
   // 1. Assault Rifle 3D Model
@@ -251,7 +278,7 @@ export class WeaponController {
   }
 
   equipSlot(slotIndex, animate = true) {
-    if (slotIndex < 1 || slotIndex > 4 || this.currentSlot === slotIndex && animate) return;
+    if (!this.weaponMeshes[slotIndex] || (!this.loadout.includes(slotIndex) && slotIndex !== 4) || this.currentSlot === slotIndex && animate) return;
 
     this.currentSlot = slotIndex;
     this.isScoped = false;
@@ -262,7 +289,8 @@ export class WeaponController {
     this.camera.updateProjectionMatrix();
 
     // Toggle active 3D model
-    for (let s = 1; s <= 4; s++) {
+    for (const key of Object.keys(this.weaponMeshes)) {
+      const s=Number(key);
       if (this.weaponMeshes[s]) {
         this.weaponMeshes[s].visible = (s === this.currentSlot);
       }
@@ -292,7 +320,7 @@ export class WeaponController {
     this.camera.updateProjectionMatrix();
 
     // Hide weapon model when looking down high-power sniper scope
-    this.weaponMeshes[3].visible = !this.isScoped;
+    this.weaponMeshes[this.currentSlot].visible = !this.isScoped;
     return this.isScoped;
   }
 
@@ -314,11 +342,11 @@ export class WeaponController {
     }
 
     // Play procedural sound for current weapon
-    if (this.currentSlot === 1) {
+    if ([1,5,8].includes(this.currentSlot)) {
       SoundEffects.playShoot();
-    } else if (this.currentSlot === 2) {
+    } else if ([2,7].includes(this.currentSlot)) {
       SoundEffects.playDmrShoot();
-    } else if (this.currentSlot === 3) {
+    } else if ([3,6].includes(this.currentSlot)) {
       SoundEffects.playSniperShoot();
     } else if (this.currentSlot === 4) {
       SoundEffects.playKnifeSlash();
@@ -485,9 +513,7 @@ export class WeaponController {
     this.reloadGeneration = (this.reloadGeneration || 0) + 1;
     this.isReloading = false;
     this.isSwitching = false;
-    for (const [slot, config] of Object.entries(WEAPON_TYPES)) {
-      this.ammoState[slot] = config.maxAmmo;
-    }
+    this.ammoState = fullMagazines(this.loadout);
     if (this.isScoped) this.toggleScope(false);
     this.lastShotTime = 0;
     this.recoilAmount = 0;

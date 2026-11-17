@@ -1,10 +1,12 @@
+import { allowedWeapon, fullMagazines, playerLoadout } from '../public/js/loadout.js';
 import { TriangleIndex } from '../public/js/spatial-index.js';
 import { WEAPON_TYPES } from '../public/js/weapons.js';
 
 export const finiteVector = v => v && [v.x, v.y, v.z].every(n => Number.isFinite(n) && Math.abs(n) < 10000);
 const distance = (a, b) => Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
-export function resetInventory(player, slot = player.combat?.slot || 1) {
-  player.combat = { slot, ammo: {1:30,2:12,3:5,4:999}, nextShot: 0, switchUntil: 0, reload: null };
+export function resetInventory(player, slot = player.combat?.slot || playerLoadout(player.loadout)[0]) {
+  if (!allowedWeapon(player,slot)) slot = playerLoadout(player.loadout)[0];
+  player.combat = { slot, ammo: fullMagazines(player.loadout), nextShot: 0, switchUntil: 0, reload: null };
   player.history = [];
   player.lastMove = null;
   player.safePosition = null;
@@ -26,12 +28,13 @@ export function startReload(player, now) {
   return true;
 }
 export function switchGun(player, slot, now) {
-  if (!WEAPON_TYPES[slot] || !player.combat) return;
+  if (!WEAPON_TYPES[slot] || !player.combat || !allowedWeapon(player,slot)) return false;
   finishReload(player, now);
   if (player.combat.slot === slot) return;
   player.combat.reload = null;
   player.combat.slot = slot;
   player.combat.switchUntil = now + 120;
+  return true;
 }
 
 function boxHit(o, d, min, max, limit) {
@@ -53,7 +56,7 @@ export function validateShot(room, shooter, data, index, now = performance.now()
   const state = shooter.combat;
   finishReload(shooter, now);
   const config = WEAPON_TYPES[state.slot];
-  if (data.weaponSlot !== state.slot || state.reload || now < state.switchUntil || now < state.nextShot || state.ammo[state.slot] <= 0) return null;
+  if (!allowedWeapon(shooter,data.weaponSlot) || data.weaponSlot !== state.slot || state.reload || now < state.switchUntil || now < state.nextShot || state.ammo[state.slot] <= 0) return null;
   if (distance(data.origin, shooter.position) > 1.5) return null;
   const len = Math.hypot(data.direction.x, data.direction.y, data.direction.z);
   if (len < 0.99 || len > 1.01) return null;

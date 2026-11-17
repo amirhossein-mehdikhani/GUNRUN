@@ -1,3 +1,4 @@
+import { OPERATORS } from './operators.js';
 // character.js - Multi-Character 3D Engine: Soldier, Robot, Cyborg & Heavy Titan Mech
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -51,6 +52,7 @@ export class RemotePlayer {
     this.id = playerData.id;
     this.name = playerData.name || 'Soldier';
     this.color = playerData.color || '#3b82f6';
+    this.activeSlot = playerData.combat?.slot || playerData.loadout?.[0] || 1;
     this.characterType = playerData.characterType || 'soldier'; // 'soldier' | 'robot' | 'cyborg' | 'heavy'
     this.team = playerData.team || null; // 'blue' | 'red' | null
     this.isTeammate = !!playerData.isTeammate;
@@ -83,6 +85,7 @@ export class RemotePlayer {
   }
 
   async initModel() {
+    if (['scout','sentinel','ranger'].includes(this.characterType)) { this.buildProceduralModel(); return; }
     await preloadCharacterModel();
     if (this.destroyed) return;
 
@@ -166,7 +169,7 @@ export class RemotePlayer {
   }
 
   buildProceduralModel() {
-    const armorColor = new THREE.Color(this.color);
+    const armorColor = new THREE.Color(OPERATORS[this.characterType]?.color || this.color);
     const bodyMat = new THREE.MeshStandardMaterial({
       color: 0x1f2937,
       roughness: 0.4,
@@ -299,7 +302,15 @@ export class RemotePlayer {
     this.group.add(rifle);
     this.proceduralWeapon = rifle;
 
+    if (['scout','sentinel','ranger'].includes(this.characterType)) {
+      const accent=new THREE.MeshStandardMaterial({color:OPERATORS[this.characterType].color,roughness:.6});
+      const detail=new THREE.Mesh(new THREE.BoxGeometry(this.characterType==='sentinel'?.95:.65,.12,.42),accent);
+      detail.position.set(0,.24,0);this.group.add(detail);
+      if(this.characterType==='scout') {const antenna=new THREE.Mesh(new THREE.CylinderGeometry(.015,.015,.45,5),accent);antenna.position.set(.22,.7,0);this.group.add(antenna);}
+      if(this.characterType==='ranger') {const hood=new THREE.Mesh(new THREE.BoxGeometry(.46,.25,.43),accent);hood.position.set(0,.56,0);this.group.add(hood);}
+    }
     this.setupHitboxVolumes();
+    this.setWeaponSlot(this.activeSlot || 1);
   }
 
   setWeaponSlot(slot) {
@@ -317,6 +328,9 @@ export class RemotePlayer {
         // DMR Pistol
         this.proceduralWeapon.scale.set(0.7, 0.7, 0.65);
         this.proceduralWeapon.position.set(0.15, -0.05, 0.35);
+      } else if ([5,6,7,8].includes(slot)) {
+        const sizes={5:[.75,.8,.65],6:[.9,1,1.25],7:[.5,.65,.4],8:[1.25,1.2,1.3]};
+        this.proceduralWeapon.scale.set(...sizes[slot]);
       } else {
         // AR
         this.proceduralWeapon.scale.set(1.0, 1.0, 1.0);

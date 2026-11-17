@@ -39,6 +39,10 @@ export const WEAPON_TYPES = {
     reloadDuration: 2200,
     hasScope: true
   },
+  5: {id:'smg',name:'Vector SMG',code:'SMG-9',maxAmmo:32,fireRate:65,isAutomatic:true,damageBody:12,damageHead:45,range:70,speedMultiplier:1.1,reloadDuration:1300},
+  6: {id:'shotgun',name:'Slug Shotgun',code:'SG-12',maxAmmo:6,fireRate:850,isAutomatic:false,damageBody:70,damageHead:140,range:45,speedMultiplier:.95,reloadDuration:2400},
+  7: {id:'pistol',name:'Tactical Pistol',code:'P-45',maxAmmo:15,fireRate:190,isAutomatic:false,damageBody:24,damageHead:72,range:65,speedMultiplier:1.12,reloadDuration:1100},
+  8: {id:'lmg',name:'Support LMG',code:'LMG-556',maxAmmo:80,fireRate:120,isAutomatic:true,damageBody:21,damageHead:85,range:130,speedMultiplier:.8,reloadDuration:3400},
   4: {
     id: 'knife',
     name: 'Combat Knife',
