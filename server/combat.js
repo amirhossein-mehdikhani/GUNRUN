@@ -103,7 +103,9 @@ export function validateShot(room, shooter, data, index, now = performance.now()
 export async function loadCollisionIndexes(publicPath, readFile) {
   const indexes = new Map();
   await Promise.all(['dust2','stalkyard','turbine','frenzy','italy','killhouse'].map(async id => {
-    const bytes = await readFile(`${publicPath}/assets/collision/${id}.bin`);
+    let bytes;
+    if(id==='killhouse') try {bytes=await readFile(publicPath+'/assets/collision/killhouse-import.bin');} catch(error) {if(error.code!=='ENOENT')throw error;}
+    bytes ||= await readFile(publicPath+'/assets/collision/'+id+'.bin');
     indexes.set(id, new TriangleIndex(new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))));
   }));
   return indexes;

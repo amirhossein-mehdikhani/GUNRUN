@@ -59,7 +59,7 @@ function closestPointsLineToLine(l1Start, l1End, l2Start, l2End, out1, out2) {
 }
 
 export class ArenaMap {
-  constructor(scene) {
+  constructor(scene, {autoLoad=true}={}) {
     this.scene = scene;
     this.currentMapId = 'dust2';
     this.baseFloorHeight = 0;
@@ -84,7 +84,7 @@ export class ArenaMap {
     this._floorRay = new THREE.Ray(new THREE.Vector3(), _downDir);
     this._floorTriangles = [];
 
-    this.loadMap('dust2');
+    if(autoLoad)this.loadMap('dust2');
   }
 
   clearMap() {
@@ -108,7 +108,7 @@ export class ArenaMap {
     this.currentMapId = mapId || 'dust2';
 
     if(this.currentMapId==='killhouse') {
-      this.buildKillhouse();
+      this.loadKillhouse();
     } else if (this.currentMapId === 'dust2' || this.currentMapId === 'dungeon') {
       this.buildDust2();
     } else if (this.currentMapId === 'stalkyard' || this.currentMapId === 'warehouse') {
@@ -124,12 +124,26 @@ export class ArenaMap {
     }
   }
 
-  buildKillhouse() {
+  async loadKillhouse() {
+    const token=this._loadToken;
+    try {
+      const response=await fetch('/assets/models/killhouse-import.json');if(!response.ok)throw Error('No licensed local map');
+      const info=await response.json();if(token!==this._loadToken)return;
+      this.setKillhouseLighting();this.spawnPoints=info.spawns.map(p=>new THREE.Vector3(p.x,p.y,p.z));
+      this.loadGlbArena('/assets/models/Killhouse.glb',['killhouse'],1,'Killhouse imported map',()=>this.buildKillhouse(),'/assets/collision/killhouse-import.bin');
+    } catch(error) {if(token===this._loadToken)this.buildKillhouse();}
+  }
+
+  setKillhouseLighting() {
     this.baseFloorHeight=0;this.scene.background=new THREE.Color(0xa7b4b8);this.scene.fog=new THREE.Fog(0xa7b4b8,55,95);
-    const root=createKillhouse();this.scene.add(root);this.mapObjects.push(root);
-    root.traverse(mesh=>{if(mesh.isMesh)this.shootableMeshes.push(mesh);});
     const hemi=new THREE.HemisphereLight(0xe2efff,0x6c5944,2);this.scene.add(hemi);this.mapObjects.push(hemi);
     const sun=new THREE.DirectionalLight(0xffedcb,2.2);sun.position.set(10,25,8);this.scene.add(sun);this.mapObjects.push(sun);
+  }
+
+  buildKillhouse() {
+    this.setKillhouseLighting();
+    const root=createKillhouse();this.scene.add(root);this.mapObjects.push(root);
+    root.traverse(mesh=>{if(mesh.isMesh)this.shootableMeshes.push(mesh);});
     this.spawnPoints=KILLHOUSE_SPAWNS.map(p=>new THREE.Vector3(p.x,p.y,p.z));
     this.octree=new Octree().fromGraphNode(root);this.triangleIndex=new TriangleIndex(worldTriangles(root));
     this.mapBounds=this.octree.bounds.clone();this.perimeterBounds={minX:-17.8,maxX:17.8,minZ:-25.8,maxZ:25.8};this.isMapReady=true;
@@ -490,10 +504,10 @@ export class ArenaMap {
   }
 
   // Shared GLB loader with Octree collision setup and race-safe load token
-  loadGlbArena(glbPath, validMapIds, scale, label, fallbackFn) {
+  loadGlbArena(glbPath, validMapIds, scale, label, fallbackFn, collisionPath=null) {
     const loadToken = this._loadToken;
     const loader = new GLTFLoader();
-    loader.load(glbPath, (gltf) => {
+    loader.load(glbPath, async (gltf) => {
       if (loadToken !== this._loadToken || !validMapIds.includes(this.currentMapId)) { disposeTrees([gltf.scene]); return; }
 
       const model = gltf.scene;
@@ -527,10 +541,20 @@ export class ArenaMap {
       this.scene.add(root);
       this.mapObjects.push(root);
 
+      let collisionRoot=root, proxy=null, coords=[];
+      if(collisionPath) {
+        try {
+          const response=await fetch(collisionPath);if(!response.ok)throw Error('Missing collision proxy');
+          const buffer=await response.arrayBuffer();coords=new Float32Array(buffer);
+          if(loadToken!==this._loadToken){disposeTrees([root]);return;}
+          const geometry=new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(coords,3));
+          proxy=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial());collisionRoot=proxy;
+        }catch(error){console.warn('Using rendered map collision fallback:',error.message);}
+      }
       this.octree = new Octree();
-      this.octree.fromGraphNode(root);
-      const coords = [];
-      root.traverse(mesh => {
+      this.octree.fromGraphNode(collisionRoot);
+      if(proxy){proxy.geometry.dispose();proxy.material.dispose();}
+      if(!coords.length) root.traverse(mesh => {
         if (!mesh.isMesh) return;
         const position = mesh.geometry.attributes.position, index = mesh.geometry.index, point = new THREE.Vector3();
         for (let i = 0; i < (index?.count ?? position.count); i++) {
@@ -828,13 +852,13 @@ export class ArenaMap {
   }
 
   // Floor height calculation with double-sided triangle raycasting and seam fallback
-  getFloorHeight(pos, _unused = null, playerRadius = 0.28, feetY = 0) {
+  getFloorHeight(pos, _unused = null, playerRadius = 0.28, feetY = 0, maxRise = 0.52) {
     if (!this.octree) {
       return null;
     }
 
     const originY = feetY + 0.9;
-    const maxStepY = feetY + 0.55;
+    const maxStepY = feetY + maxRise;
     const centerFloor = this._raycastHighestFloorAt(pos.x, originY, pos.z, maxStepY, 40.0);
 
     // If center ray found solid floor within 1m below feet, use it directly
@@ -853,7 +877,7 @@ export class ArenaMap {
         pos.x + offsets[i][0],
         originY,
         pos.z + offsets[i][1],
-        feetY + 0.15,
+        feetY + Math.min(0.15,maxRise),
         40.0
       );
       if (f !== null && (seamFloor === null || f > seamFloor)) {

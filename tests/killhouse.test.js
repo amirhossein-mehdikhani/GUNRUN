@@ -15,3 +15,10 @@ test('Killhouse client octree supports floors, stairs and wall collision',()=>{
   Object.assign(map,{scene:new Scene(),mapObjects:[],shootableMeshes:[]});map.buildKillhouse();
   assert.equal(map.isMapReady,true);assert.equal(map.spawnPoints.length,8);assert.ok(map.octree);assert.ok(map.triangleIndex);
 });
+import fs from 'node:fs';import {GLTFLoader}from'three/addons/loaders/GLTFLoader.js';import {Octree}from'three/addons/math/Octree.js';import {BufferGeometry,BufferAttribute,Mesh,MeshBasicMaterial}from'three';
+test('local imported Killhouse uses matching server/client proxy and supported spawn clearance',{skip:!fs.existsSync('public/assets/models/Killhouse.glb')},async()=>{
+ const info=JSON.parse(fs.readFileSync('public/assets/models/killhouse-import.json'));assert.ok(info.outputTriangles<100000);assert.ok(info.collisionTriangles<10000);
+ const b=fs.readFileSync('public/assets/collision/killhouse-import.bin'),coords=new Float32Array(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength));assert.equal(coords.length/9,info.collisionTriangles);
+ const mesh=new Mesh(new BufferGeometry().setAttribute('position',new BufferAttribute(coords,3)),new MeshBasicMaterial());const map=new ArenaMap(new Scene(),{autoLoad:false});map.octree=new Octree().fromGraphNode(mesh);map.mapBounds=map.octree.bounds;const index=new TriangleIndex(coords);
+ for(const p of info.spawns){assert.ok(Math.abs(index.raycast(p,{x:0,y:-1,z:0},2)-1.6)<.02);assert.equal(map.canStandAt(p,p.y-1.6),true,JSON.stringify(p));}
+});

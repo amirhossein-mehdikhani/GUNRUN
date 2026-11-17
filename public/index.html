@@ -25,6 +25,7 @@
   </script>
 </head>
 <body>
+  <div id="ability-screen-fx" class="ability-screen-fx" aria-hidden="true"></div>
   <!-- 3D WebGL Canvas -->
   <canvas id="game-canvas"></canvas>
   <div id="connection-status" role="status" hidden></div>
@@ -199,7 +200,7 @@
           </div>
 
           <div class="map-gallery-grid">
-            <div class="map-gallery-card" data-map="killhouse"><div class="map-gallery-thumb-wrap"><img src="/assets/images/maps/killhouse.png" class="map-gallery-thumb" alt="Killhouse recreation"><div class="map-selected-badge">✓ SELECTED</div></div><div class="map-gallery-body"><div class="map-gallery-header"><div class="map-gallery-title">Killhouse</div><div class="map-game-tag">Recreation</div></div><div class="map-badge-row"><span class="map-chip">Compact warehouse</span><span class="map-chip">Lightweight</span></div><div class="map-gallery-desc">Training warehouse with a central watchtower, raised spawn platforms, containers and close-range cover. Original lightweight recreation inspired by Killhouse.</div><button class="map-select-btn">Select Arena</button></div></div>
+            <div class="map-gallery-card" data-map="killhouse"><div class="map-gallery-thumb-wrap"><img src="/assets/images/maps/killhouse-fallback.png" class="map-gallery-thumb" alt="Killhouse recreation"><div class="map-selected-badge">✓ SELECTED</div></div><div class="map-gallery-body"><div class="map-gallery-header"><div class="map-gallery-title">Killhouse</div><div class="map-game-tag">Recreation</div></div><div class="map-badge-row"><span class="map-chip">Compact warehouse</span><span class="map-chip">Lightweight</span></div><div class="map-gallery-desc">Training warehouse with a central watchtower, raised spawn platforms, containers and close-range cover. Original lightweight recreation inspired by Killhouse.</div><button class="map-select-btn">Select Arena</button></div></div>
             <!-- 1. Dust II -->
             <div class="map-gallery-card selected" data-map="dust2">
               <div class="map-gallery-thumb-wrap">
@@ -456,7 +457,7 @@
             <option value="tdm">2 Teams (Max 5 / Team)</option>
           </select>
         </div>
-        <div class="map-grid" id="waiting-map-selector" style="margin-top: 8px;"><div class="map-card" data-map="killhouse"><img src="/assets/images/maps/killhouse.png" class="waiting-map-thumb" alt="Killhouse"><div class="map-title">Killhouse</div></div>
+        <div class="map-grid" id="waiting-map-selector" style="margin-top: 8px;"><div class="map-card" data-map="killhouse"><img src="/assets/images/maps/killhouse-fallback.png" class="waiting-map-thumb" alt="Killhouse"><div class="map-title">Killhouse</div></div>
           <div class="map-card" data-map="dust2">
             <img src="/assets/images/maps/dust2.jpg" class="waiting-map-thumb" alt="Dust II">
             <div class="map-title">Dust II</div>

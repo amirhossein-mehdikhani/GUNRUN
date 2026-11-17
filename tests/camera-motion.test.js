@@ -31,3 +31,10 @@ test('ordinary jump momentum is preserved without stair smoothing',()=>{
   assert.ok(a.camera.position.y>1.6);assert.ok(a.playerVelocity.y>0);assert.equal(a.viewOffset.y,0);
 });
 
+test('falling beside a raised surface does not teleport the player upward onto it',()=>{
+  const a=physicsActor(.3);a.isGrounded=false;a.playerVelocity.y=-1;a.updatePhysics(1/60);assert.ok(a.camera.position.y<1.6);assert.equal(a.isGrounded,false);
+});
+test('buffered jump input expires in real time and focus reset clears pending jumps',()=>{
+  const a=physicsActor(0);a.jumpRequested=true;a.jumpRequestTimer=.2;a.jumpRequestedAt=performance.now()-500;a.updatePhysics(1/60);assert.equal(a.playerVelocity.y,0);assert.equal(a.jumpRequested,false);
+  a.jumpRequested=true;a.jumpRequestTimer=.2;a.moveInput.forward=true;a.resetMovementInput();assert.equal(a.jumpRequested,false);assert.equal(a.jumpRequestTimer,0);assert.equal(a.moveInput.forward,false);
+});

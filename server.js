@@ -128,8 +128,10 @@ function getLanIpAddresses() {
 const rooms = new Map();
 
 // Map-specific arena spawn points (8 Octree-verified open & mutually reachable spawns per GLB map)
+const importedKillhousePath=resolveAssetPath('public','assets','models','killhouse-import.json');
+const importedKillhouse=fs.existsSync(importedKillhousePath)?JSON.parse(fs.readFileSync(importedKillhousePath,'utf8')):null;
 const MAP_SPAWNS = {
-  killhouse: KILLHOUSE_SPAWNS,
+  killhouse: importedKillhouse?.spawns || KILLHOUSE_SPAWNS,
   dust2: [
     { x: 34.0, y: 9.28, z: -40.0 },
     { x: -47.72, y: 10.16, z: 53.88 },
@@ -184,7 +186,7 @@ const MAP_SPAWNS = {
 
 // Fixed 2-Team base spawns (verified wide-open & opposite sides of the main connected arena)
 const TEAM_SPAWNS = {
-  killhouse: {blue:{x:0,y:2.2,z:-23},red:{x:0,y:2.2,z:23}},
+  killhouse: importedKillhouse?{blue:importedKillhouse.spawns.find(p=>p.z<0 && p.x===0),red:importedKillhouse.spawns.find(p=>p.z>0 && p.x===0)}:{blue:{x:0,y:2.2,z:-23},red:{x:0,y:2.2,z:23}},
   dust2: {
     blue: { x: 34.0, y: 9.28, z: -40.0 },
     red: { x: -47.72, y: 10.16, z: 53.88 }

@@ -271,3 +271,13 @@ Press **Q** to use the selected operator ability. Pathfinder marks enemy positio
 Killhouse is an original lightweight recreation inspired by the training warehouse layout, not an extracted COD Mobile asset or a claimed exact replica. It includes a central observation tower, stairs, raised bases, containers, plywood cover and side lanes. Rendered and server collision geometry come from the same factory; it uses 1,356 triangles and 8 material batches with no downloaded textures. Download candidates were checked first: the Sketchfab model was not downloadable and its download endpoint returned 401; no direct model archive was exposed by the CGTrader page.
 
 Camera stair/crouch changes and small server corrections now ease the rendered eye while applying physical collision changes immediately. Physics uses steps of at most 1/60s to reduce low-FPS collision jumps. Large teleports and respawns reset camera easing. Hover the FPS counter for server/step/recovery correction counts when diagnosing a remaining jump.
+
+### Local downloaded Killhouse model
+
+The local installation now prefers the downloaded Blenderworks FBX map. Run `npm run import:killhouse -- path/to/killhouse.fbx` to regenerate its optimized GLB, collision proxy and spawn metadata. The source has 735,086 triangles; the game render has 86,863 triangles in six material batches, and collision uses a separate 8,776-triangle proxy. Dense decorative props use coarse collision hulls while structural walls keep their mesh shape.
+
+The licensed FBX, converted GLB, imported collision and metadata are ignored by Git. The source checkout and CI fall back to the code-built arena when these local files are absent. Do not upload the standalone model files without redistribution permission. See [CGTrader's license](https://help.cgtrader.com/hc/en-us/articles/360015124437-Royalty-Free-License).
+
+Mouse look now requests unadjusted pointer input when supported, rejects non-finite/extreme warp packets and guards capture transitions. Normal fast turns and yaw wrap stay responsive. The FPS tooltip includes a mouse-spike rejection count. Buffered jump input is cleared on focus loss, pause, death and respawn; airborne floor queries cannot snap the player upward onto a surface they have not crossed.
+
+Ability feedback includes armor shells, healing particles, recon rings and local screen indicators, with reduced particle counts on Low and a reduced-motion CSS fallback.

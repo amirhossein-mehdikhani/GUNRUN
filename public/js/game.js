@@ -1,3 +1,4 @@
+import {AbilityEffects} from './ability-effects.js';
 import {ABILITIES} from './abilities.js';
 import { compensateView, decayView, physicsSteps } from './camera-motion.js';
 import { WEAPON_TYPES } from './weapons.js';
@@ -5,7 +6,7 @@ import { playerLoadout } from './loadout.js';
 import { OPERATORS } from './operators.js';
 // game.js - Core FPS Game Engine: Multi-Weapon Loadout, Tactical Grenades, Pause Menu & End-Match Systems
 import * as THREE from 'three';
-import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import {StablePointerLockControls} from './look-controls.js';
 import { ArenaMap } from './map.js';
 import { WeaponController } from './weapon.js';
 import { ProjectileManager } from './projectiles.js';
@@ -160,6 +161,14 @@ export class GameApp {
     this.tabPillMap = document.getElementById('tab-pill-map');
     this.tabPillChar = document.getElementById('tab-pill-char');
     this.mapGalleryCards = document.querySelectorAll('.map-gallery-card');
+    fetch('/assets/models/killhouse-import.json').then(response=>response.ok?response.json():null).then(info=>{
+      if(!info)return;this.hasImportedKillhouse=true;
+      const card=document.querySelector('.map-gallery-card[data-map="killhouse"]');
+      card.querySelector('.map-game-tag').textContent='Downloaded model';
+      card.querySelector('.map-gallery-desc').textContent='Killhouse model by Blenderworks. Optimized to '+info.outputTriangles.toLocaleString()+' triangles, with the original watchtower, rooms, containers, vehicles and cover layout.';
+      document.querySelectorAll('[data-map="killhouse"] img').forEach(img=>img.src='/assets/images/maps/killhouse.png');
+      if(this.selectedMap==='killhouse')this.selectMap('killhouse');
+    }).catch(()=>{});
     const operatorGrid=document.querySelector('.character-gallery-grid');
     for(const id of ['scout','sentinel','ranger']) {
       const info=OPERATORS[id],card=document.createElement('div');card.className='character-gallery-card';card.dataset.character=id;
@@ -258,6 +267,7 @@ export class GameApp {
 
     // Build Tactical Projectile Manager (Frag & Flashbang)
     this.projectiles = new ProjectileManager(this.scene, this.arenaMap, this.camera);
+    this.abilityEffects=new AbilityEffects(this.scene,document.getElementById('ability-screen-fx'));
     this.applyGraphics();
 
     // Preload character models
@@ -270,6 +280,7 @@ export class GameApp {
       this.applyRenderResolution();
     });
     document.addEventListener('visibilitychange', () => {
+      this.resetMovementInput();
       this.clock.getDelta();
       this.lastRenderTime = 0;
       this.isMouseDown = false;
@@ -292,17 +303,24 @@ export class GameApp {
     });
     this.weapon.effectScale = this.graphicsPreset.particles;
     this.projectiles.effectScale = this.graphicsPreset.particles;
+    this.abilityEffects.effectScale=this.graphicsPreset.particles;
     document.body.classList.toggle('lightweight-ui', !this.graphicsPreset.shadows);
     this.applyRenderResolution();
   }
 
+  resetMovementInput() {
+    this.jumpRequested=false;this.jumpRequestTimer=0;this.jumpRequestedAt=0;this.isMouseDown=false;
+    Object.keys(this.moveInput).forEach(key=>{this.moveInput[key]=false;});
+  }
+
   initControls() {
     window.addEventListener('blur', () => {
+      this.resetMovementInput();
       this.isMouseDown = false;
       this.scoreboardModal.classList.remove('visible');
       Object.keys(this.moveInput).forEach(key => { this.moveInput[key] = false; });
     });
-    this.controls = new PointerLockControls(this.camera, document.body);
+    this.controls = new StablePointerLockControls(this.camera, document.body);
 
     this.controls.addEventListener('lock', () => {
       if (this.state === 'playing') {
@@ -312,6 +330,7 @@ export class GameApp {
 
     // When ESC is pressed or Pointer Lock released
     this.controls.addEventListener('unlock', () => {
+      this.resetMovementInput();
       this.isMouseDown = false;
       this.scoreboardModal.classList.remove('visible');
       if (this.state === 'playing' && this.isAlive) {
@@ -384,7 +403,7 @@ export class GameApp {
         case 'Space':
           if (this.state === 'playing' && this.isAlive && this.controls.isLocked) {
             e.preventDefault();
-            this.jumpRequested = true;
+            this.jumpRequested = true;this.jumpRequestedAt=performance.now();
             this.jumpRequestTimer = 0.2; // 200ms jump buffer
             if (this.isGrounded) {
               this.playerVelocity.y = this.jumpForce;
@@ -846,7 +865,7 @@ export class GameApp {
     });
 
     const mapInfoDict = {
-      killhouse: {title:'Killhouse',subtitle:'Lightweight training warehouse recreation',img:'/assets/images/maps/killhouse.png'},
+      killhouse: {title:'Killhouse',subtitle:this.hasImportedKillhouse?'Downloaded Blenderworks model':'Lightweight training warehouse recreation',img:this.hasImportedKillhouse?'/assets/images/maps/killhouse.png':'/assets/images/maps/killhouse-fallback.png'},
       dust2: { title: 'Dust II', subtitle: 'CS de_dust2 (Counter-Strike)', img: '/assets/images/maps/dust2.jpg' },
       stalkyard: { title: 'Stalkyard', subtitle: 'Half-Life Deathmatch', img: '/assets/images/maps/stalkyard.jpg' },
       turbine: { title: 'DM-Turbine', subtitle: 'Unreal Tournament', img: '/assets/images/maps/turbine.jpg' },
@@ -980,6 +999,7 @@ export class GameApp {
       this.playerVelocity.set(0,0,0);
     });
     this.socket.on('ability-state',data=>{
+      this.abilityEffects.play(this.selectedCharacter,this.camera.position,{local:true,duration:data.duration,follow:()=>this.camera.position});
       this.abilityReadyAt=performance.now()+data.cooldown*1000;this.health=data.health;this.updateHudHealth();
       this.addFeedItem(escapeHtml(data.name)+' activated');this.reconMarks ||= [];
       for(const mark of data.marks||[]) {
@@ -989,7 +1009,7 @@ export class GameApp {
       }
     });
     this.socket.on('ability-used',data=>{
-      const remote=this.remotePlayers.get(data.playerId);if(remote) {remote.setHealth(data.health);remote.showAbility(data.duration);}
+      const remote=this.remotePlayers.get(data.playerId);if(remote) {remote.setHealth(data.health);this.abilityEffects.play(remote.characterType,remote.group.position,{duration:data.duration,follow:()=>remote.group.position});}
     });
     this.socket.on('hit-confirmed', data => this.triggerHitmarker(data.isHeadshot));
     this.socket.on('weapon-state', data => {
@@ -1530,6 +1550,7 @@ export class GameApp {
     this.remotePlayers.forEach(p => p.destroy());
     this.remotePlayers.clear();
     if (this.projectiles) this.projectiles.clear();
+    this.abilityEffects?.clear();
     this.clearReconMarks();
     this.currentRoom = null;
   }
@@ -1538,6 +1559,7 @@ export class GameApp {
   // IN-MATCH LOGIC & GAMEPLAY
   // ==========================================
   startMatchSession() {
+    this.resetMovementInput();
     this.abilityReadyAt=0;
     this.clearReconMarks();
     this.weapon.clearEffects();
@@ -1626,6 +1648,7 @@ export class GameApp {
     this.remotePlayers.forEach(p => p.destroy());
     this.remotePlayers.clear();
     if (this.projectiles) this.projectiles.clear();
+    this.abilityEffects?.clear();
 
     const isTdm = this.currentRoom?.settings?.gameMode === 'tdm';
     const myTeam = myData?.team || null;
@@ -1753,6 +1776,7 @@ export class GameApp {
   }
 
   handleLocalDeath(killerName) {
+    this.resetMovementInput();
     this.isAlive = false;
     this.isMouseDown = false;
     this.health = 0;
@@ -1781,6 +1805,7 @@ export class GameApp {
   }
 
   handleLocalRespawn(spawnPos) {
+    this.resetMovementInput();
     this.weapon.resetAmmo();
     this.isMouseDown = false;
     this.sniperScopeOverlay.classList.add('hidden');
@@ -2029,6 +2054,7 @@ export class GameApp {
     }
 
     // Process jump request with 200ms buffer (prevents missed Space clicks during step transitions)
+    if(this.jumpRequested && performance.now()-(this.jumpRequestedAt||0)>200) {this.jumpRequested=false;this.jumpRequestTimer=0;}
     if (this.jumpRequestTimer > 0) {
       this.jumpRequestTimer -= delta;
       if (this.jumpRequestTimer <= 0) {
@@ -2058,17 +2084,16 @@ export class GameApp {
     }
 
     // Floor detection using double-sided multi-hit Octree raycasting (no fake infinite y=0 floor!)
+    const MAX_STEP_UP = 0.52;
+    const MAX_STEP_DOWN = 0.52;
     let floorHeight = -999;
-    const octreeFloor = this.arenaMap.getFloorHeight(currentPos, null, playerRadius, feetY);
+    const octreeFloor = this.arenaMap.getFloorHeight(currentPos, null, playerRadius, feetY, wasGrounded ? MAX_STEP_UP : 0.015);
     if (octreeFloor !== null) {
       floorHeight = octreeFloor;
     }
 
     const currentFeetY = currentPos.y - this.playerHeight;
     const isJumpingUp = this.playerVelocity.y > 0;
-    const MAX_STEP_UP = 0.52;
-    const MAX_STEP_DOWN = 0.52;
-
     if (!isJumpingUp) {
       if (floorHeight > -900) {
         // 1. Step UP onto stairs/ramps smoothly
@@ -2084,7 +2109,7 @@ export class GameApp {
           this.isGrounded = true;
         }
         // 3. Normal floor landing or contact
-        else if (currentFeetY <= floorHeight) {
+        else if (currentFeetY <= floorHeight && (prevY-this.playerHeight)>=floorHeight-.015) {
           currentPos.y = floorHeight + this.playerHeight;
           this.playerVelocity.y = 0;
           this.isGrounded = true;
@@ -2196,7 +2221,7 @@ export class GameApp {
     if (stats.elapsed >= 0.5) {
       if (this.hudFps) {
         this.hudFps.textContent = `${Math.round(stats.frames / stats.elapsed)} FPS`;
-        this.hudFps.title = `Worst frame: ${stats.maxMs.toFixed(1)}ms | Frames over 33ms: ${stats.slowFrames} | Camera corrections: ${this.cameraCorrections.server} server / ${this.cameraCorrections.steps} steps / ${this.cameraCorrections.recovery} recovery | Draw calls: ${this.renderer.info.render.calls} | Triangles: ${this.renderer.info.render.triangles}`;
+        this.hudFps.title = `Worst frame: ${stats.maxMs.toFixed(1)}ms | Frames over 33ms: ${stats.slowFrames} | Mouse spikes rejected: ${this.controls.lookInput.spikes} | Camera corrections: ${this.cameraCorrections.server} server / ${this.cameraCorrections.steps} steps / ${this.cameraCorrections.recovery} recovery | Draw calls: ${this.renderer.info.render.calls} | Triangles: ${this.renderer.info.render.triangles}`;
       }
       if (this.hudPing) {
         const transport = this.socket.io.engine?.transport?.name || 'connecting';
@@ -2215,6 +2240,7 @@ export class GameApp {
       this.updateAbilityHud?.();
     }
 
+    this.abilityEffects?.update(delta);
     this.remotePlayers.forEach((player) => {
       player.update(delta);
     });

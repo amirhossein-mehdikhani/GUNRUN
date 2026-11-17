@@ -38,3 +38,9 @@ tmp/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Locally licensed Killhouse model; do not redistribute standalone source assets.
+/killhouse.fbx
+/public/assets/models/Killhouse.glb
+/public/assets/models/killhouse-import.json
+/public/assets/collision/killhouse-import.bin

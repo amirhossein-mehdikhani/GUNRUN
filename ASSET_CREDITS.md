@@ -32,3 +32,7 @@ Earlier Soldier, RobotExpressive and Xbot models retain their existing sources; 
 ## Killhouse recreation
 
 `public/js/killhouse.js` is original code-built geometry, inspired by the training warehouse described in [Activision’s Killhouse map guide](https://blog.activision.com/call-of-duty/2019-10/Call-of-Duty-Mobile-Map-Snapshot-Killhouse). No COD assets or third-party map meshes are bundled. The thumbnail is a roofless overview render of this geometry. It is a lightweight recreation, not an exact COD Mobile map import.
+
+## Locally downloaded Killhouse
+
+[Killhouse by Blenderworks](https://www.cgtrader.com/free-3d-models/exterior/other/call-of-duty-killhouse-map), downloaded through the user's signed-in account, is installed locally as an optimized map. The source has no textures; the importer assigns game materials. It is marked Royalty Free (no AI), not CC0. The source FBX, GLB, collision and import metadata are deliberately excluded from Git; the rendered thumbnail is included as game UI imagery. The [license](https://help.cgtrader.com/hc/en-us/articles/360015124437-Royalty-Free-License) limits standalone redistribution. These files must not be added to public source archives as freely redistributable assets.
