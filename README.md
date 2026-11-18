@@ -281,3 +281,13 @@ The licensed FBX, converted GLB, imported collision and metadata are ignored by 
 Mouse look now requests unadjusted pointer input when supported, rejects non-finite/extreme warp packets and guards capture transitions. Normal fast turns and yaw wrap stay responsive. The FPS tooltip includes a mouse-spike rejection count. Buffered jump input is cleared on focus loss, pause, death and respawn; airborne floor queries cannot snap the player upward onto a surface they have not crossed.
 
 Ability feedback includes armor shells, healing particles, recon rings and local screen indicators, with reduced particle counts on Low and a reduced-motion CSS fallback.
+
+### Play on Android and iOS
+
+Open the LAN URL shown in RUNGUN on a phone or tablet connected to the host's Wi-Fi.
+Use Chrome on Android or Safari on iOS. You can join the same rooms as desktop
+players or host a solo Zombies match. Landscape gives the controls more space.
+
+Drag the left stick to move and drag the open play area to aim. Hold Fire for
+automatic weapons. The other buttons let you jump, crouch, switch weapons, reload,
+scope, use abilities, throw equipment, or pause.

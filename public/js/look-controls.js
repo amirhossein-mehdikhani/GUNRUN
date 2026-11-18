@@ -20,11 +20,17 @@ export class StablePointerLockControls extends Controls {
     this.onMove=e=>{
       if(!this.enabled||!this.isLocked)return;
       const input=this.lookInput.sample(e.movementX,e.movementY,e.timeStamp,doc.defaultView?.innerWidth,doc.defaultView?.innerHeight);if(!input)return;
-      this.euler.setFromQuaternion(camera.quaternion,'YXZ');this.euler.y-=input.x*.002*this.pointerSpeed;this.euler.x-=input.y*.002*this.pointerSpeed;
-      this.euler.x=Math.max(-Math.PI/2+.001,Math.min(Math.PI/2-.001,this.euler.x));camera.quaternion.setFromEuler(this.euler);this.dispatchEvent({type:'change'});
+      this.rotate(input.x,input.y,.002*this.pointerSpeed);
     };
     this.onLock=()=>{const locked=doc.pointerLockElement===element;if(locked===this.isLocked)return;this.isLocked=locked;this.lookInput.reset();this.dispatchEvent({type:locked?'lock':'unlock'});};
     doc.addEventListener('mousemove',this.onMove);doc.addEventListener('pointerlockchange',this.onLock);
+  }
+  rotate(dx, dy, sensitivity) {
+    this.euler.setFromQuaternion(this.object.quaternion, 'YXZ');
+    this.euler.y -= dx * sensitivity;
+    this.euler.x = Math.max(-Math.PI/2+.001, Math.min(Math.PI/2-.001, this.euler.x - dy*sensitivity));
+    this.object.quaternion.setFromEuler(this.euler);
+    this.dispatchEvent({type:'change'});
   }
   lock(){try{const result=this.domElement.requestPointerLock({unadjustedMovement:true});result?.catch(error=>{if(error.name==='NotSupportedError')this.domElement.requestPointerLock();});}catch(error){if(error.name==='NotSupportedError'||error.name==='TypeError')this.domElement.requestPointerLock();else throw error;}}
   unlock(){this.domElement.ownerDocument.exitPointerLock();}

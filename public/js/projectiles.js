@@ -157,17 +157,17 @@ export class ProjectileManager {
     });
 
     // Check if local player was blinded
-    if (dist < 22) {
+    if (dist < 35) {
       const camDir = new THREE.Vector3();
       this.camera.getWorldDirection(camDir);
 
       const toFlash = new THREE.Vector3().subVectors(pos, this.camera.position).normalize();
       const dot = camDir.dot(toFlash);
 
-      // If looking toward flash (dot > 0.2) or very close (dist < 6), trigger blindness
-      if (dot > 0.2 || dist < 6) {
+      // Wider forward exposure and a stronger close-range blast.
+      if (dot > -0.15 || dist < 10) {
         SoundEffects.playFlashbang();
-        const intensity = Math.max(0.4, 1.0 - (dist / 22));
+        const intensity = Math.min(1, Math.max(0.65, 1.35 - (dist / 35)));
         this.triggerFlashbangOverlay(intensity);
       }
     }
@@ -177,13 +177,14 @@ export class ProjectileManager {
     const overlay = document.getElementById('flashbang-overlay');
     if (!overlay) return;
 
+    clearTimeout(this.flashFadeTimer);
     overlay.style.transition = 'none';
     overlay.style.opacity = `${intensity}`;
 
     setTimeout(() => {
       overlay.style.transition = 'opacity 3.5s cubic-bezier(0.2, 0.8, 0.3, 1)';
       overlay.style.opacity = '0';
-    }, 100);
+    }, 350 + intensity * 900);
   }
 
   igniteMolotov({id,position,duration,radius}) {

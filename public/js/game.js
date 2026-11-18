@@ -1,3 +1,5 @@
+import {EXTRA_ARENAS, PLAYABLE_MAPS} from './arena-catalog.js';
+import {FramePacer} from './frame-pacing.js';
 import {AbilityEffects} from './ability-effects.js';
 import {ABILITIES} from './abilities.js';
 import { compensateView, decayView, physicsSteps } from './camera-motion.js';
@@ -6,6 +8,7 @@ import { playerLoadout } from './loadout.js';
 import { OPERATORS } from './operators.js';
 // game.js - Core FPS Game Engine: Multi-Weapon Loadout, Tactical Grenades, Pause Menu & End-Match Systems
 import * as THREE from 'three';
+import {TouchControls} from './touch-controls.js';
 import {StablePointerLockControls} from './look-controls.js';
 import { ArenaMap } from './map.js';
 import { WeaponController } from './weapon.js';
@@ -13,6 +16,16 @@ import { ProjectileManager } from './projectiles.js';
 import { RemotePlayer, preloadCharacterModel } from './character.js';
 import { SoundEffects } from './audio.js';
 import { GRAPHICS_PRESETS, resolveGraphics, renderPixelRatio } from './graphics.js';
+
+const PROFILE_STORAGE_KEY = 'rungun-profile';
+function readProfile() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY));
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  } catch {
+    return {};
+  }
+}
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -75,11 +88,12 @@ export class GameApp {
     this.deaths = 0;
 
     // Selections
-    this.selectedCharacter = 'soldier';
+    this.profile = readProfile();
+    this.selectedCharacter = Object.hasOwn(OPERATORS, this.profile.character) ? this.profile.character : 'soldier';
     this.selectedLoadout = [1,2];
     try { this.selectedLoadout = playerLoadout(JSON.parse(localStorage.getItem('rungun-loadout'))); } catch {}
-    this.selectedMap = 'dust2';
-    this.selectedColor = '#3b82f6';
+    this.selectedMap = [...PLAYABLE_MAPS, 'shuffle'].includes(this.profile.map) ? this.profile.map : 'dust2';
+    this.selectedColor = /^#[0-9a-f]{6}$/i.test(this.profile.color) ? this.profile.color : '#3b82f6';
 
     // Network Sync Throttle
     this.lastNetworkSync = 0;
@@ -102,7 +116,7 @@ export class GameApp {
     this.graphicsPreset = resolveGraphics(this.graphicsMode, navigator);
     this.resolutionScale = 1;
     this.qualitySample = { elapsed: 0, frames: 0 };
-    this.lastRenderTime = 0;
+    this.framePacer = new FramePacer();
 
     // DOM UI Elements
     this.cacheDomElements();
@@ -276,20 +290,21 @@ export class GameApp {
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
       this.applyRenderResolution();
     });
     document.addEventListener('visibilitychange', () => {
       this.resetMovementInput();
+      if (document.hidden && this.controls?.isTouch) this.controls.unlock();
       this.clock.getDelta();
-      this.lastRenderTime = 0;
+      this.framePacer = new FramePacer();
       this.isMouseDown = false;
       Object.keys(this.moveInput).forEach(key => { this.moveInput[key] = false; });
     });
   }
 
   applyRenderResolution() {
-    this.renderer.setPixelRatio(renderPixelRatio(this.graphicsPreset, innerWidth, innerHeight, devicePixelRatio, this.resolutionScale));
+    const ratio = renderPixelRatio(this.graphicsPreset, innerWidth, innerHeight, devicePixelRatio, this.resolutionScale);
+    this.renderer.setDrawingBufferSize(innerWidth, innerHeight, ratio);
   }
 
   applyGraphics() {
@@ -301,14 +316,20 @@ export class GameApp {
     if (shadowChanged) this.scene.traverse(obj => {
       if (obj.material) (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(mat => { mat.needsUpdate = true; });
     });
-    this.weapon.effectScale = this.graphicsPreset.particles;
-    this.projectiles.effectScale = this.graphicsPreset.particles;
-    this.abilityEffects.effectScale=this.graphicsPreset.particles;
+    this.applyEffectBudget();
     document.body.classList.toggle('lightweight-ui', !this.graphicsPreset.shadows);
     this.applyRenderResolution();
   }
 
+  applyEffectBudget() {
+    const scale = this.graphicsPreset.particles * this.resolutionScale;
+    this.weapon.effectScale = scale;
+    this.projectiles.effectScale = scale;
+    this.abilityEffects.effectScale = scale;
+  }
+
   resetMovementInput() {
+    this.controls?.resetTouches?.();
     this.jumpRequested=false;this.jumpRequestTimer=0;this.jumpRequestedAt=0;this.isMouseDown=false;
     Object.keys(this.moveInput).forEach(key=>{this.moveInput[key]=false;});
   }
@@ -316,20 +337,25 @@ export class GameApp {
   initControls() {
     window.addEventListener('blur', () => {
       this.resetMovementInput();
+      if (this.controls?.isTouch) this.controls.unlock();
       this.isMouseDown = false;
       this.scoreboardModal.classList.remove('visible');
       Object.keys(this.moveInput).forEach(key => { this.moveInput[key] = false; });
     });
-    this.controls = new StablePointerLockControls(this.camera, document.body);
+    this.controls = matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0
+      ? new TouchControls(this)
+      : new StablePointerLockControls(this.camera, document.body);
 
     this.controls.addEventListener('lock', () => {
       if (this.state === 'playing') {
         this.pauseMenuScreen.classList.add('hidden');
+        if (this.currentRoom?.settings?.gameMode === 'zombies') this.socket.emit('zombies-active', true);
       }
     });
 
     // When ESC is pressed or Pointer Lock released
     this.controls.addEventListener('unlock', () => {
+      if (this.currentRoom?.settings?.gameMode === 'zombies') this.socket.emit('zombies-active', false);
       this.resetMovementInput();
       this.isMouseDown = false;
       this.scoreboardModal.classList.remove('visible');
@@ -349,7 +375,7 @@ export class GameApp {
 
     // Mouse Controls (Shoot & Scope)
     window.addEventListener('mousedown', (e) => {
-      if (!this.controls.isLocked || this.state !== 'playing' || !this.isAlive) return;
+      if (this.controls.isTouch || !this.controls.isLocked || this.state !== 'playing' || !this.isAlive) return;
 
       if (e.button === 0) {
         // Left Click: Shoot or Slash
@@ -373,7 +399,7 @@ export class GameApp {
 
     // Mouse Wheel weapon cycle
     window.addEventListener('wheel', (e) => {
-      if (!this.controls.isLocked || this.state !== 'playing' || !this.isAlive) return;
+      if (this.controls.isTouch || !this.controls.isLocked || this.state !== 'playing' || !this.isAlive) return;
       const slots=[...this.weapon.loadout,4];
       const nextSlot=slots[(slots.indexOf(this.weapon.currentSlot)+(e.deltaY>0?1:2))%3];
       this.switchWeaponSlot(nextSlot);
@@ -561,7 +587,7 @@ export class GameApp {
   }
 
   clearReconMarks() {
-    for(const mark of this.reconMarks||[]) {this.scene.remove(mark.mesh);mark.mesh.geometry.dispose();mark.mesh.material.dispose();}
+    for(const mark of this.reconMarks||[]) {if(mark.target?.overheadSprite){mark.target.overheadSprite.material.depthTest=true;mark.target.overheadSprite.renderOrder=0;}this.scene.remove(mark.mesh);mark.mesh.geometry.dispose();mark.mesh.material.dispose();}
     this.reconMarks=[];
   }
 
@@ -592,7 +618,7 @@ export class GameApp {
     if (!this.currentRoom) return;
     const isHost = (this.currentRoom.hostId === this.localPlayerId);
     const mapNames = {
-      killhouse: 'KILLHOUSE', dust2: 'DUST II',
+      switchyard: 'SWITCHYARD', cistern: 'CISTERN WORKS', killhouse: 'KILLHOUSE', dust2: 'DUST II',
       stalkyard: 'STALKYARD',
       turbine: 'DM-TURBINE',
       frenzy: 'FRENZY',
@@ -645,8 +671,24 @@ export class GameApp {
       try { localStorage.setItem('rungun-graphics', this.graphicsMode); } catch { /* Optional storage. */ }
       this.applyGraphics();
     });
-    const randomNum = Math.floor(100 + Math.random() * 900);
-    this.nicknameInput.value = `Soldier_${randomNum}`;
+    const fields = {
+      nickname: this.nicknameInput,
+      roomName: this.roomNameInput,
+      mode: this.gameModeSelect,
+      gravity: this.gravitySelect,
+      scoreLimit: this.scoreLimitSelect
+    };
+    for (const [key, field] of Object.entries(fields)) {
+      if (!field) continue;
+      const saved = this.profile[key];
+      if (typeof saved === 'string' && (!field.options || Array.from(field.options).some(option => option.value === saved))) {
+        field.value = field.maxLength > 0 ? saved.slice(0, field.maxLength) : saved;
+      }
+      if (key === 'nickname' && !field.value.trim()) field.value = 'Soldier_' + Math.floor(100 + Math.random() * 900);
+      field.addEventListener(field.options ? 'change' : 'input', () => this.saveProfile(key, field.value));
+    }
+    this.saveProfile('nickname', this.nicknameInput.value);
+    this.colorOptions.forEach(button => button.classList.toggle('selected', button.dataset.color === this.selectedColor));
 
     // 3-Tab Lobby Navigation
     this.lobbyTabBtns.forEach(btn => {
@@ -667,6 +709,7 @@ export class GameApp {
         this.colorOptions.forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
         this.selectedColor = btn.dataset.color;
+        this.saveProfile('color', this.selectedColor);
         const dot = document.getElementById('home-quick-char-colordot');
         if (dot) dot.style.background = this.selectedColor;
       });
@@ -850,9 +893,15 @@ export class GameApp {
     });
   }
 
+  saveProfile(key, value) {
+    this.profile[key] = value;
+    try { localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(this.profile)); } catch {}
+  }
+
   selectMap(mapId) {
     if (!mapId) return;
     this.selectedMap = mapId;
+    this.saveProfile('map', mapId);
 
     // Update showcase gallery cards
     this.mapGalleryCards.forEach(card => {
@@ -865,6 +914,10 @@ export class GameApp {
     });
 
     const mapInfoDict = {
+      ...Object.fromEntries(Object.entries(EXTRA_ARENAS).map(([id, arena]) => [id, {
+        ...arena, img: '/assets/images/maps/' + id + '.png'
+      }])),
+      shuffle: {title:'Shuffle', subtitle:'Pick a random arena when hosting.', img:'/assets/images/maps/shuffle.png'},
       killhouse: {title:'Killhouse',subtitle:this.hasImportedKillhouse?'Downloaded Blenderworks model':'Lightweight training warehouse recreation',img:this.hasImportedKillhouse?'/assets/images/maps/killhouse.png':'/assets/images/maps/killhouse-fallback.png'},
       dust2: { title: 'Dust II', subtitle: 'CS de_dust2 (Counter-Strike)', img: '/assets/images/maps/dust2.jpg' },
       stalkyard: { title: 'Stalkyard', subtitle: 'Half-Life Deathmatch', img: '/assets/images/maps/stalkyard.jpg' },
@@ -883,6 +936,7 @@ export class GameApp {
   selectCharacter(charId) {
     if (!charId) return;
     this.selectedCharacter = charId;
+    this.saveProfile('character', charId);
 
     // Update showcase gallery cards
     this.characterGalleryCards.forEach(card => {
@@ -1002,10 +1056,13 @@ export class GameApp {
       this.abilityEffects.play(this.selectedCharacter,this.camera.position,{local:true,duration:data.duration,follow:()=>this.camera.position});
       this.abilityReadyAt=performance.now()+data.cooldown*1000;this.health=data.health;this.updateHudHealth();
       this.addFeedItem(escapeHtml(data.name)+' activated');this.reconMarks ||= [];
-      for(const mark of data.marks||[]) {
+      this.clearReconMarks();
+      for(const mark of this.selectedCharacter==='scout' ? data.marks||[] : []) {
+        const target=this.remotePlayers.get(mark.id);
+        if(target?.overheadSprite) {target.overheadSprite.material.depthTest=false;target.overheadSprite.renderOrder=100;}
         const mesh=new THREE.Mesh(new THREE.OctahedronGeometry(.22),new THREE.MeshBasicMaterial({color:0xff7733,depthTest:false,depthWrite:false,transparent:true,opacity:.9}));
         mesh.position.set(mark.position.x,mark.position.y+.5,mark.position.z);mesh.renderOrder=99;this.scene.add(mesh);
-        this.reconMarks.push({mesh,until:performance.now()+data.duration*1000});
+        this.reconMarks.push({mesh,target,until:performance.now()+data.duration*1000});
       }
     });
     this.socket.on('ability-used',data=>{
@@ -1181,7 +1238,11 @@ export class GameApp {
       this.matchEndModal.classList.remove('hidden');
       this.matchEndModal.classList.add('active');
 
-      if (data.gameMode === 'tdm') {
+      if (data.gameMode === 'zombies') {
+        this.winnerTitle.textContent = data.survival === 'victory' ? 'SURVIVED ALL 5 WAVES' : data.survival === 'defeat' ? 'OVERRUN' : 'SURVIVAL ENDED';
+        this.winnerTitle.style.color = '#ffffff';
+        this.matchEndTeamScores?.classList.add('hidden');
+      } else if (data.gameMode === 'tdm') {
         if (data.winningTeam === 'draw') {
           this.winnerTitle.textContent = 'DRAW MATCH!';
           this.winnerTitle.style.color = '#fbbf24';
@@ -1228,6 +1289,29 @@ export class GameApp {
 
       const isHost = (room.hostId === this.localPlayerId);
       this.openWaitingRoom(room, isHost);
+    });
+
+    this.socket.on('zombies-state', ({wave, enemies}) => {
+      if (this.state !== 'playing' || this.currentRoom?.settings?.gameMode !== 'zombies') return;
+      const liveIds = new Set(enemies.map(enemy => enemy.id));
+      for (const [id, remote] of this.remotePlayers) {
+        if (liveIds.has(id)) continue;
+        remote.destroy();
+        this.remotePlayers.delete(id);
+      }
+      for (const enemy of enemies) {
+        let remote = this.remotePlayers.get(enemy.id);
+        if (!remote) {
+          remote = new RemotePlayer(this.scene, enemy);
+          this.remotePlayers.set(enemy.id, remote);
+        }
+        remote.setTransform(enemy.position, enemy.rotation, enemy.isMoving, false, false);
+        remote.setHealth(enemy.health);
+      }
+      if (this.hudMatchScore) {
+        this.hudMatchScore.textContent = wave === 0 ? 'PREPARE FOR WAVE 1' :
+          `WAVE ${wave}/5 · ${enemies.length ? enemies.length + ' LEFT' : 'CLEARED'}`;
+      }
     });
 
     this.socket.on('player-moved', (data) => {
@@ -1333,7 +1417,7 @@ export class GameApp {
       this.updateScoreboardTable(scoreboard);
 
       if (victimId === this.localPlayerId) {
-        this.handleLocalDeath(killerName);
+        if (data.gameMode !== 'zombies') this.handleLocalDeath(killerName);
       } else {
         const victimRemote = this.remotePlayers.get(victimId);
         if (victimRemote) {
@@ -1382,7 +1466,7 @@ export class GameApp {
         ? '<span style="color:#f59e0b;font-weight:700">IN-GAME</span>'
         : '<span style="color:#10b981;font-weight:700">OPEN LOBBY</span>';
 
-      const mapNames = { killhouse: 'Killhouse', dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
+      const mapNames = { switchyard: 'Switchyard', cistern: 'Cistern Works', killhouse: 'Killhouse', dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
       const displayMap = mapNames[r.mapId] || 'Dust II';
       const isTdm = r.gameMode === 'tdm';
       const modeBadge = isTdm
@@ -1450,9 +1534,9 @@ export class GameApp {
   updateWaitingSettingsSummary() {
     if (!this.currentRoom) return;
     const s = this.currentRoom.settings;
-    const mapNames = { killhouse: 'Killhouse', dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
+    const mapNames = { switchyard: 'Switchyard', cistern: 'Cistern Works', killhouse: 'Killhouse', dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
     const mName = mapNames[s.mapId] || 'Dust II';
-    const modeLabel = s.gameMode === 'tdm' ? '2 TEAMS (MAX 5/TEAM)' : 'FREE-FOR-ALL';
+    const modeLabel = s.gameMode === 'zombies' ? 'ZOMBIES (SOLO)' : s.gameMode === 'tdm' ? '2 TEAMS (MAX 5/TEAM)' : 'FREE-FOR-ALL';
     this.waitingSettingsSummary.textContent = `Mode: ${modeLabel} | Map: ${mName.toUpperCase()} | Gravity: ${s.gravity.toUpperCase()} | Limit: ${s.scoreLimit} Kills`;
   }
 
@@ -1559,6 +1643,7 @@ export class GameApp {
   // IN-MATCH LOGIC & GAMEPLAY
   // ==========================================
   startMatchSession() {
+    if (this.controls.isTouch) this.controls.unlock();
     this.resetMovementInput();
     this.abilityReadyAt=0;
     this.clearReconMarks();
@@ -1574,7 +1659,7 @@ export class GameApp {
     this.arenaMap.loadMap(mapId);
 
     const mapNames = {
-      killhouse: 'KILLHOUSE', dust2: 'DUST II',
+      switchyard: 'SWITCHYARD', cistern: 'CISTERN WORKS', killhouse: 'KILLHOUSE', dust2: 'DUST II',
       stalkyard: 'STALKYARD',
       turbine: 'DM-TURBINE',
       frenzy: 'FRENZY',
@@ -1778,6 +1863,7 @@ export class GameApp {
   handleLocalDeath(killerName) {
     this.resetMovementInput();
     this.isAlive = false;
+    if (this.controls.isTouch) this.controls.unlock();
     this.isMouseDown = false;
     this.health = 0;
     this.updateHudHealth();
@@ -2191,21 +2277,28 @@ export class GameApp {
   animate(timestamp) {
     requestAnimationFrame((t) => this.animate(t));
 
+    // The lobby and room screens cover the canvas. Avoid scene submission there.
+    if (this.state === 'lobby' || this.state === 'room') {
+      this.clock.getDelta();
+      return;
+    }
+
     // Avoid spending full GPU/CPU power behind menus or in background tabs.
     const active = this.state === 'playing' && this.controls.isLocked;
-    const frameInterval = 1000 / (document.hidden ? 5 : active ? 60 : 30);
-    if (this.lastRenderTime && timestamp - this.lastRenderTime < frameInterval - 0.5) return;
-    this.lastRenderTime = timestamp - ((timestamp - this.lastRenderTime) % frameInterval);
+    this.framePacer ||= new FramePacer();
+    if (!this.framePacer.shouldRender(timestamp, {active, hidden: document.hidden, low: this.graphicsPreset === GRAPHICS_PRESETS.low})) return;
 
     const frameDelta = this.clock.getDelta();
     const delta = Math.min(frameDelta, 0.1);
     if (this.graphicsMode === 'auto' && active && this.arenaMap.isMapReady && !document.hidden) {
       this.qualitySample.elapsed += frameDelta;
       this.qualitySample.frames++;
-      if (this.qualitySample.elapsed >= 3) {
-        if (this.qualitySample.frames / this.qualitySample.elapsed < 45 && this.resolutionScale > 0.6) {
-          this.resolutionScale = Math.max(0.6, this.resolutionScale - 0.1);
+      if (this.qualitySample.elapsed >= 1.5) {
+        const fps = this.qualitySample.frames / this.qualitySample.elapsed;
+        if (fps < 53 && this.resolutionScale > .45) {
+          this.resolutionScale = Math.max(.45, this.resolutionScale * (fps < 40 ? .8 : .9));
           this.applyRenderResolution();
+          this.applyEffectBudget();
         }
         this.qualitySample = { elapsed: 0, frames: 0 };
       }
@@ -2220,7 +2313,7 @@ export class GameApp {
     if (frameDelta > 0.0334) stats.slowFrames++;
     if (stats.elapsed >= 0.5) {
       if (this.hudFps) {
-        this.hudFps.textContent = `${Math.round(stats.frames / stats.elapsed)} FPS`;
+        this.hudFps.textContent = active ? Math.round(stats.frames / stats.elapsed) + ' FPS' : 'Paused';
         this.hudFps.title = `Worst frame: ${stats.maxMs.toFixed(1)}ms | Frames over 33ms: ${stats.slowFrames} | Mouse spikes rejected: ${this.controls.lookInput.spikes} | Camera corrections: ${this.cameraCorrections.server} server / ${this.cameraCorrections.steps} steps / ${this.cameraCorrections.recovery} recovery | Draw calls: ${this.renderer.info.render.calls} | Triangles: ${this.renderer.info.render.triangles}`;
       }
       if (this.hudPing) {

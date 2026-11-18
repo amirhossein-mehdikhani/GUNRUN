@@ -1,3 +1,6 @@
+import {EXTRA_ARENAS} from '../public/js/arena-catalog.js';
+import {createExtraArena} from '../public/js/extra-arenas.js';
+import {worldTriangles} from '../public/js/killhouse.js';
 import { allowedWeapon, fullMagazines, playerLoadout } from '../public/js/loadout.js';
 import { TriangleIndex } from '../public/js/spatial-index.js';
 import { WEAPON_TYPES } from '../public/js/weapons.js';
@@ -70,7 +73,7 @@ export function validateShot(room, shooter, data, index, now = performance.now()
   if (!config.isMelee) state.ammo[state.slot]--;
   let nearest = index.raycast(origin, direction, config.range) ?? config.range;
   let victim = null, headshot = false;
-  for (const target of Object.values(room.players)) {
+  for (const target of [...Object.values(room.players), ...(room.zombies?.enemies ?? [])]) {
     if (target.id === shooter.id || !target.isAlive) continue;
     // Fixed server-controlled rewind matches the browser's 75ms interpolation delay.
     const history = target.history || [];
@@ -108,5 +111,13 @@ export async function loadCollisionIndexes(publicPath, readFile) {
     bytes ||= await readFile(publicPath+'/assets/collision/'+id+'.bin');
     indexes.set(id, new TriangleIndex(new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))));
   }));
+  for (const id of Object.keys(EXTRA_ARENAS)) {
+    const map = createExtraArena(id, false);
+    indexes.set(id, new TriangleIndex(worldTriangles(map)));
+    map.traverse(mesh => {
+      mesh.geometry?.dispose();
+      mesh.material?.dispose();
+    });
+  }
   return indexes;
 }

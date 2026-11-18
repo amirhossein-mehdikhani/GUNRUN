@@ -1,14 +1,15 @@
 import { validLoadout } from '../public/js/loadout.js';
 import { OPERATORS } from '../public/js/operators.js';
 import { WEAPON_TYPES } from '../public/js/weapons.js';
-const maps = ['killhouse','dust2','stalkyard','turbine','frenzy','italy'];
+import {PLAYABLE_MAPS} from '../public/js/arena-catalog.js';
+const maps = [...PLAYABLE_MAPS, 'shuffle'];
 export const cleanName = (value, fallback, length) => typeof value === 'string'
   ? value.replace(/[<>\x00-\x1f\x7f]/g, '').trim().slice(0,length) || fallback : fallback;
 export function cleanSettings(value = {}) {
   const result = {};
   if (!value || typeof value !== 'object') return result;
   if (maps.includes(value.mapId)) result.mapId = value.mapId;
-  if (['ffa','tdm'].includes(value.gameMode)) result.gameMode = value.gameMode;
+  if (['ffa','tdm','zombies'].includes(value.gameMode)) result.gameMode = value.gameMode;
   if (['normal','low','antigravity'].includes(value.gravity)) result.gravity = value.gravity;
   if (Number.isFinite(value.scoreLimit) || (typeof value.scoreLimit === 'string' && /^\d+$/.test(value.scoreLimit))) {
     result.scoreLimit = Math.min(50,Math.max(5,Number(value.scoreLimit)));

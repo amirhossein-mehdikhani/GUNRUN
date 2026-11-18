@@ -19,7 +19,7 @@ export class AbilityEffects {
   update(delta){for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.time+=delta;const p=e.time/e.life;
     if(e.follow){e.group.position.copy(e.follow());e.group.position.y-=1.55;}
     if(e.shield){e.mat.opacity=(.12+.04*Math.sin(e.time*8))*Math.min(1,(e.life-e.time)*3);e.mesh.rotation.y+=delta*.7;}
-    else{e.mesh.scale.setScalar(e.heal?1+p:1+p*17);e.mat.opacity=(1-p)*.7;}
+    else{e.mesh.scale.setScalar(e.heal?1+p:1+p*99);e.mat.opacity=(1-p)*.7;}
     if(e.points){e.points.position.y=e.time*.7;e.points.rotation.y=e.time;e.points.material.opacity=1-p;}
     if(p>=1)this.remove(i);
   }if(this.overlay&&performance.now()>this.overlayUntil){this.overlay.className='ability-screen-fx';this.overlay.dataset.label='';}}

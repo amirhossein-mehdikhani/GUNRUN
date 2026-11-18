@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>RUNGUN - LAN 3D Multiplayer FPS</title>
   <link rel="stylesheet" href="style.css">
 
@@ -132,6 +132,7 @@
               <label for="game-mode-select">Game Mode</label>
               <select id="game-mode-select" class="form-select">
                 <option value="ffa">Free-For-All (Solo)</option>
+                <option value="zombies">Zombies (Solo)</option>
                 <option value="tdm">2 Teams (Max 5 per Team)</option>
               </select>
             </div>
@@ -200,6 +201,9 @@
           </div>
 
           <div class="map-gallery-grid">
+<div class="map-gallery-card" data-map="switchyard"><div class="map-gallery-thumb-wrap"><img class="map-gallery-thumb" src="/assets/images/maps/switchyard.png" alt=""><div class="map-selected-badge">✓ SELECTED</div></div><div class="map-gallery-body"><div class="map-gallery-title">Switchyard</div><div class="map-gallery-desc">Freight yard with long lanes and staggered cargo cover.</div><button class="map-select-btn">Select Arena</button></div></div>
+<div class="map-gallery-card" data-map="cistern"><div class="map-gallery-thumb-wrap"><img class="map-gallery-thumb" src="/assets/images/maps/cistern.png" alt=""><div class="map-selected-badge">✓ SELECTED</div></div><div class="map-gallery-body"><div class="map-gallery-title">Cistern Works</div><div class="map-gallery-desc">Sandstone pumping station with a raised platform and flanking routes.</div><button class="map-select-btn">Select Arena</button></div></div>
+<div class="map-gallery-card" data-map="shuffle"><div class="map-gallery-thumb-wrap"><img class="map-gallery-thumb" src="/assets/images/maps/shuffle.png" alt=""><div class="map-selected-badge">✓ SELECTED</div></div><div class="map-gallery-body"><div class="map-gallery-title">Shuffle</div><div class="map-gallery-desc">Let the game choose a random arena.</div><button class="map-select-btn">Select Arena</button></div></div>
             <div class="map-gallery-card" data-map="killhouse"><div class="map-gallery-thumb-wrap"><img src="/assets/images/maps/killhouse-fallback.png" class="map-gallery-thumb" alt="Killhouse recreation"><div class="map-selected-badge">✓ SELECTED</div></div><div class="map-gallery-body"><div class="map-gallery-header"><div class="map-gallery-title">Killhouse</div><div class="map-game-tag">Recreation</div></div><div class="map-badge-row"><span class="map-chip">Compact warehouse</span><span class="map-chip">Lightweight</span></div><div class="map-gallery-desc">Training warehouse with a central watchtower, raised spawn platforms, containers and close-range cover. Original lightweight recreation inspired by Killhouse.</div><button class="map-select-btn">Select Arena</button></div></div>
             <!-- 1. Dust II -->
             <div class="map-gallery-card selected" data-map="dust2">
@@ -454,10 +458,13 @@
           <label style="font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase;">Host: Arena Map & Mode</label>
           <select id="waiting-host-mode-select" class="form-select" style="width: auto; padding: 5px 10px; font-size: 11px;">
             <option value="ffa">Free-For-All (Solo)</option>
+                <option value="zombies">Zombies (Solo)</option>
             <option value="tdm">2 Teams (Max 5 / Team)</option>
           </select>
         </div>
-        <div class="map-grid" id="waiting-map-selector" style="margin-top: 8px;"><div class="map-card" data-map="killhouse"><img src="/assets/images/maps/killhouse-fallback.png" class="waiting-map-thumb" alt="Killhouse"><div class="map-title">Killhouse</div></div>
+        <div class="map-grid" id="waiting-map-selector" style="margin-top: 8px;"><div class="map-card" data-map="switchyard"><img class="waiting-map-thumb" src="/assets/images/maps/switchyard.png" alt=""><div class="map-title">Switchyard</div></div>
+<div class="map-card" data-map="cistern"><img class="waiting-map-thumb" src="/assets/images/maps/cistern.png" alt=""><div class="map-title">Cistern Works</div></div>
+<div class="map-card" data-map="shuffle"><img class="waiting-map-thumb" src="/assets/images/maps/shuffle.png" alt=""><div class="map-title">Shuffle</div></div><div class="map-card" data-map="killhouse"><img src="/assets/images/maps/killhouse-fallback.png" class="waiting-map-thumb" alt="Killhouse"><div class="map-title">Killhouse</div></div>
           <div class="map-card" data-map="dust2">
             <img src="/assets/images/maps/dust2.jpg" class="waiting-map-thumb" alt="Dust II">
             <div class="map-title">Dust II</div>
@@ -564,6 +571,25 @@
   <!-- ==========================================
        4. IN-GAME HUD
        ========================================== -->
+  <div id="touch-controls" hidden>
+    <div class="touch-look" aria-hidden="true"></div>
+    <div class="touch-stick" aria-label="Move"><i></i></div>
+    <button type="button" class="touch-pause" data-action="pause" aria-label="Pause">Ⅱ</button>
+    <div class="touch-combat">
+      <button type="button" data-action="fire" aria-label="Fire"><span aria-hidden="true">⊙</span><small>Fire</small></button>
+      <button type="button" data-action="aim" aria-label="Scope"><span aria-hidden="true">⌖</span><small>Scope</small></button>
+      <button type="button" data-action="reload" aria-label="Reload"><span aria-hidden="true">↻</span><small>Reload</small></button>
+      <button type="button" data-action="jump" aria-label="Jump"><span aria-hidden="true">↑</span><small>Jump</small></button>
+      <button type="button" data-action="crouch" aria-label="Crouch"><span aria-hidden="true">↓</span><small>Crouch</small></button>
+      <button type="button" data-action="weapon" aria-label="Switch"><span aria-hidden="true">⇄</span><small>Switch</small></button>
+    </div>
+    <div class="touch-equipment">
+      <button type="button" data-action="ability" aria-label="Ability"><span aria-hidden="true">✦</span><small>Ability</small></button>
+      <button type="button" data-action="frag" aria-label="Frag"><span aria-hidden="true">✹</span><small>Frag</small></button>
+      <button type="button" data-action="flash" aria-label="Flash"><span aria-hidden="true">ϟ</span><small>Flash</small></button>
+      <button type="button" data-action="molotov" aria-label="Firebomb"><span aria-hidden="true">♨</span><small>Firebomb</small></button>
+    </div>
+  </div>
   <div id="game-hud">
     <!-- Flashbang Fullscreen Blindness Overlay -->
     <div id="flashbang-overlay"></div>

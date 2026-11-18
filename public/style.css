@@ -1890,3 +1890,109 @@ body, html {
 
 .ability-screen-fx{position:fixed;inset:0;pointer-events:none;z-index:24;transition:box-shadow .25s,opacity .25s;opacity:0}.ability-screen-fx::before{content:attr(data-label);position:absolute;top:22%;left:0;right:0;text-align:center;font-size:14px;letter-spacing:4px;font-weight:800;color:#d6ffff;text-shadow:0 0 15px currentColor}.ability-shield{opacity:1;box-shadow:inset 0 0 90px #28baff66,inset 0 0 5px #62dfff}.ability-heal{opacity:1;box-shadow:inset 0 0 100px #18ee7c66;animation:ability-glow .65s ease-in-out infinite alternate}.ability-recon{opacity:1;background:repeating-linear-gradient(0deg,transparent 0 5px,#38ffbe08 5px 6px);box-shadow:inset 0 0 80px #36ffc333}.ability-recon::after{content:'';position:absolute;left:0;right:0;height:3px;background:#72ffd988;box-shadow:0 0 25px #3cfa;animation:ability-scan 1s linear forwards}@keyframes ability-scan{from{top:0}to{top:100%}}@keyframes ability-glow{from{opacity:.4}to{opacity:1}}
 @media(prefers-reduced-motion:reduce){.ability-heal{animation:none}.ability-recon::after{animation:none;display:none}}
+
+/* Touch HUD stays inside the visible viewport and clear of phone cutouts. */
+#touch-controls {
+  --stick-size: clamp(96px, 24vmin, 134px);
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#touch-controls[hidden] { display: none; }
+.touch-look, .touch-stick, #touch-controls button {
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.touch-look { position: absolute; inset: 0; }
+.touch-stick {
+  position: absolute;
+  bottom: calc(56px + env(safe-area-inset-bottom));
+  left: calc(16px + env(safe-area-inset-left));
+  width: var(--stick-size);
+  aspect-ratio: 1;
+  border: 2px solid #8ad8ef80;
+  border-radius: 50%;
+  background: #07152280;
+  display: grid;
+  place-items: center;
+}
+.touch-stick i {
+  width: 38%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #80e6fcaa;
+  transform: translate(var(--stick-x, 0px), var(--stick-y, 0px));
+  pointer-events: none;
+}
+.touch-combat, .touch-equipment {
+  position: absolute;
+  bottom: calc(58px + env(safe-area-inset-bottom));
+}
+.touch-combat {
+  right: calc(12px + env(safe-area-inset-right));
+  width: 170px;
+  height: 178px;
+}
+#touch-controls button {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid #a7dcecaa;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 30%, #264959c9, #06121cbb);
+  color: #f1fbff;
+  line-height: 1;
+  box-shadow: inset 0 0 0 3px #08182255, 0 2px 5px #0007;
+}
+#touch-controls button span { font: 700 20px/1 system-ui, sans-serif; }
+#touch-controls button small { font: 700 9px/1.2 system-ui, sans-serif; }
+#touch-controls button:active { background: #21617c; border-color: #f1fbff; }
+.touch-combat button { position: absolute; }
+#touch-controls [data-action="fire"] {
+  top: 43px;
+  right: 0;
+  width: 74px;
+  height: 74px;
+  background: radial-gradient(circle at 35% 30%, #b34b36ed, #572721e8);
+  border: 2px solid #ffc2a0;
+}
+#touch-controls [data-action="fire"] span { font-size: 31px; }
+#touch-controls [data-action="fire"]:active { background: #cb5e42; }
+.touch-combat [data-action="aim"] { top: 0; right: 56px; }
+.touch-combat [data-action="reload"] { top: 62px; right: 84px; }
+.touch-combat [data-action="weapon"] { bottom: 0; right: 111px; }
+.touch-combat [data-action="jump"] { bottom: 0; right: 55px; }
+.touch-combat [data-action="crouch"] { bottom: 0; right: 0; }
+.touch-equipment {
+  left: calc(16px + env(safe-area-inset-left));
+  bottom: calc(66px + var(--stick-size) + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(2, 46px);
+  gap: 5px;
+}
+.touch-pause {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(10px + env(safe-area-inset-right));
+}
+@media (orientation: landscape) {
+  .touch-equipment {
+    left: calc(var(--stick-size) + 26px + env(safe-area-inset-left));
+    bottom: calc(58px + env(safe-area-inset-bottom));
+  }
+}
+@media (pointer: coarse) {
+  #weapon-loadout-bar { display: none; }
+  .hud-health-wrap, .hud-ammo-wrap { bottom: calc(8px + env(safe-area-inset-bottom)); }
+  .hud-health-wrap { left: calc(12px + env(safe-area-inset-left)); }
+  .hud-ammo-wrap { right: calc(12px + env(safe-area-inset-right)); }
+  .lan-stats { top: calc(8px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left)); }
+  .hud-top-bar { top: calc(47px + env(safe-area-inset-top)); }
+}

@@ -88,3 +88,41 @@ test('room validation, active match, malformed packets, concurrent asset loading
   let duplicate=0;host.on('ability-state',()=>duplicate++);host.emit('use-ability');
   pending=event(host,'server-pong');host.emit('client-ping',999);await pending;assert.equal(duplicate,0);
 });
+
+test('solo Zombies rejects guests, starts its first wave on resume, and resets on rematch', async () => {
+  host.emit('leave-room');
+  guest.emit('leave-room');
+  let pending = event(host, 'room-created');
+  host.emit('create-room', {playerName:'Survivor',settings:{gameMode:'zombies',mapId:'killhouse'}});
+  const {room} = await pending;
+  assert.equal(room.maxPlayers, 1);
+  pending = event(guest, 'join-error');
+  guest.emit('join-room', {roomId:room.id,playerName:'Guest'});
+  assert.match(await pending, /full/);
+  pending = event(host, 'match-started');
+  host.emit('start-match');
+  const match = await pending;
+  const position = match.room.players[host.id].position;
+  const wave = new Promise((resolve,reject) => {
+    const timeout = setTimeout(() => reject(new Error('First wave did not spawn')), 5000);
+    host.on('zombies-state', function onState(state) {
+      if (!state.wave) return;
+      clearTimeout(timeout);
+      host.off('zombies-state', onState);
+      resolve(state);
+    });
+  });
+  host.emit('zombies-active', true);
+  const movement = setInterval(() => host.emit('player-movement', {position,rotation:{yaw:0,pitch:0}}), 50);
+  try {
+    const state = await wave;
+    assert.equal(state.wave, 1);
+    assert.equal(state.enemies.length, 3);
+    assert.ok(state.enemies.every(enemy => enemy.isAlive && enemy.characterType === 'zombie'));
+  } finally {
+    clearInterval(movement);
+  }
+  pending = event(host, 'match-restarted');
+  host.emit('rematch-request');
+  assert.deepEqual((await pending).room.zombies, {active:false,wave:0,delay:2,enemies:[]});
+});

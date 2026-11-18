@@ -1,3 +1,4 @@
+import {EXTRA_ARENAS, PLAYABLE_MAPS, arenaSpawns} from './public/js/arena-catalog.js';
 import {activateAbility,reduceAbilityDamage} from './server/abilities.js';
 import {KILLHOUSE_SPAWNS} from './public/js/killhouse-spawns.js';
 import { acceptMolotov, stepBottle, inFire, FIRE_RADIUS, FIRE_DURATION } from './server/molotov.js';
@@ -131,6 +132,7 @@ const rooms = new Map();
 const importedKillhousePath=resolveAssetPath('public','assets','models','killhouse-import.json');
 const importedKillhouse=fs.existsSync(importedKillhousePath)?JSON.parse(fs.readFileSync(importedKillhousePath,'utf8')):null;
 const MAP_SPAWNS = {
+  ...Object.fromEntries(Object.keys(EXTRA_ARENAS).map(id => [id, arenaSpawns(id)])),
   killhouse: importedKillhouse?.spawns || KILLHOUSE_SPAWNS,
   dust2: [
     { x: 34.0, y: 9.28, z: -40.0 },
@@ -186,6 +188,10 @@ const MAP_SPAWNS = {
 
 // Fixed 2-Team base spawns (verified wide-open & opposite sides of the main connected arena)
 const TEAM_SPAWNS = {
+  ...Object.fromEntries(Object.keys(EXTRA_ARENAS).map(id => {
+    const spawns = arenaSpawns(id);
+    return [id, {blue:spawns[2], red:spawns[7]}];
+  })),
   killhouse: importedKillhouse?{blue:importedKillhouse.spawns.find(p=>p.z<0 && p.x===0),red:importedKillhouse.spawns.find(p=>p.z>0 && p.x===0)}:{blue:{x:0,y:2.2,z:-23},red:{x:0,y:2.2,z:23}},
   dust2: {
     blue: { x: 34.0, y: 9.28, z: -40.0 },
@@ -238,6 +244,12 @@ const TEAM_COLORS = {
   blue: '#3b82f6',
   red: '#ef4444'
 };
+
+function resolveMapChoice(choice, previous) {
+  if (choice !== 'shuffle') return choice;
+  const choices = PLAYABLE_MAPS.filter(id => id !== previous);
+  return choices[Math.floor(Math.random() * choices.length)];
+}
 
 function getRandomSpawn(mapId = 'dust2', excludeIndex = -1) {
   const spawns = MAP_SPAWNS[mapId] || MAP_SPAWNS.dust2;
@@ -392,6 +404,7 @@ function buildScoreboard(room) {
 function getPublicRoomList() {
   const list = [];
   for (const [id, room] of rooms.entries()) {
+    if (room.settings.gameMode === 'zombies') continue;
     const counts = getTeamCounts(room);
     list.push({
       id: room.id,
@@ -441,11 +454,14 @@ function triggerMatchFinish(room, winner) {
     winnerName = winner.name;
   }
 
+  const survival = room.zombies?.result;
+  delete room.zombies;
   room.status = 'ended';
 
   io.to(room.id).emit('match-finished', {
     gameMode: room.settings.gameMode || 'ffa',
     winningTeam,
+    survival,
     teamScores: room.teamScores || { blue: 0, red: 0 },
     winnerId,
     winnerName,
@@ -514,6 +530,14 @@ function applyDamageAndCheckKill(room, roomId, shooter, victim, damage, weaponNa
     teamScores: room.teamScores || { blue: 0, red: 0 },
     scoreboard: buildScoreboard(room)
   });
+
+  if (room.zombies) {
+    if (victim.id === room.hostId) {
+      room.zombies.result = 'defeat';
+      triggerMatchFinish(room, victim);
+    }
+    return true;
+  }
 
   // Check Win Condition
   if (isTdm) {
@@ -591,8 +615,8 @@ io.on('connection', (socket) => {
   socket.on('create-room', ({ roomName, playerName, playerColor, characterType, loadout, settings }) => {
     if (currentRoomId) return;
     const roomId = 'room_' + Math.random().toString(36).substring(2, 8);
-    const chosenMap = settings?.mapId || 'dust2';
-    const gameMode = settings?.gameMode === 'tdm' ? 'tdm' : 'ffa';
+    const chosenMap = resolveMapChoice(settings?.mapId || 'dust2');
+    const gameMode = settings?.gameMode || 'ffa';
     const hostTeam = gameMode === 'tdm' ? 'blue' : null;
     const hostSpawn = gameMode === 'tdm'
       ? getTeamSpawn(chosenMap, hostTeam, 0)
@@ -604,7 +628,7 @@ io.on('connection', (socket) => {
       hostId: socket.id,
       hostName: (playerName || 'Player').trim().substring(0, 16),
       status: 'lobby',
-      maxPlayers: gameMode === 'tdm' ? MAX_TEAM_SIZE * 2 : 12,
+      maxPlayers: gameMode === 'zombies' ? 1 : gameMode === 'tdm' ? MAX_TEAM_SIZE * 2 : 12,
       teamScores: { blue: 0, red: 0 },
       settings: {
         mapId: chosenMap,
@@ -735,18 +759,19 @@ io.on('connection', (socket) => {
     const room = rooms.get(currentRoomId);
     if (!room || room.hostId !== socket.id || room.status !== 'lobby') return;
 
-    if (settings.mapId) room.settings.mapId = settings.mapId;
+    if (settings.mapId) room.settings.mapId = resolveMapChoice(settings.mapId, room.settings.mapId);
     if (settings.gravity) room.settings.gravity = settings.gravity;
     if (settings.scoreLimit) room.settings.scoreLimit = Math.min(Math.max(Number(settings.scoreLimit), 5), 50);
 
-    if (settings.gameMode === 'tdm' || settings.gameMode === 'ffa') {
+    if (settings.gameMode === 'zombies' && Object.keys(room.players).length !== 1) return;
+    if (settings.gameMode) {
       room.settings.gameMode = settings.gameMode;
       if (settings.gameMode === 'tdm') {
         room.maxPlayers = MAX_TEAM_SIZE * 2;
         room.teamScores = { blue: 0, red: 0 };
         assignTeamsForAllPlayers(room);
       } else {
-        room.maxPlayers = 12;
+        room.maxPlayers = settings.gameMode === 'zombies' ? 1 : 12;
         for (const p of Object.values(room.players)) {
           p.team = null;
         }
@@ -770,6 +795,7 @@ io.on('connection', (socket) => {
     room.teamScores = { blue: 0, red: 0 };
 
     assignMatchStartSpawns(room);
+    resetZombies(room);
 
     io.to(currentRoomId).emit('match-started', {
       room: room
@@ -780,6 +806,11 @@ io.on('connection', (socket) => {
   });
 
   // In-game: Player Movement Sync
+  socket.on('zombies-active', active => {
+    const room = rooms.get(currentRoomId);
+    if (room?.hostId === socket.id && room.zombies && typeof active === 'boolean') room.zombies.active = active;
+  });
+
   socket.on('player-movement', (data) => {
     if (!currentRoomId || !data?.position || !data?.rotation) return;
     if (![data.position.x, data.position.y, data.position.z, data.rotation.yaw, data.rotation.pitch].every(Number.isFinite)) return;
@@ -870,7 +901,7 @@ io.on('connection', (socket) => {
           return;
         }
         burnAge++;
-        if(burnAge%15===0) for(const victim of Object.values(room.players)) {
+        if(burnAge%15===0) for(const victim of [...Object.values(room.players), ...(room.zombies?.enemies ?? [])]) {
           if(inFire(bottle.position,victim,index)) applyDamageAndCheckKill(room,roomId,shooter,victim,12,'Molotov',false,false,bottle.position);
           if(room.status!=='in-game') break;
         }
@@ -908,7 +939,7 @@ io.on('connection', (socket) => {
     });
 
     // Calculate AoE damage for each alive player in room
-    for (const victim of Object.values(room.players)) {
+    for (const victim of [...Object.values(room.players), ...(room.zombies?.enemies ?? [])]) {
       if (!victim.isAlive) continue;
 
       const dx = victim.position.x - expX;
@@ -977,6 +1008,7 @@ io.on('connection', (socket) => {
     if (!collisionIndexes?.has(room.settings.mapId)) return;
 
     assignMatchStartSpawns(room);
+    resetZombies(room);
     room.teamScores = { blue: 0, red: 0 };
     room.status = 'in-game';
 
@@ -1001,6 +1033,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(currentRoomId);
     if (!room || room.hostId !== socket.id) return;
 
+    delete room.zombies;
     room.status = 'lobby';
     room.teamScores = { blue: 0, red: 0 };
     for (const p of Object.values(room.players)) {
@@ -1083,6 +1116,82 @@ function openBrowser(url) {
 }
 
 // Start HTTP and WebSocket server
+function resetZombies(room) {
+  delete room.zombies;
+  if (room.settings.gameMode === 'zombies') {
+    room.zombies = { active: false, wave: 0, delay: 2, enemies: [] };
+  }
+}
+
+setInterval(() => {
+  for (const room of rooms.values()) {
+    const run = room.zombies;
+    const player = room.players[room.hostId];
+    if (!run || room.status !== 'in-game' || !run.active || !player?.isAlive || performance.now() - (player.lastMove || 0) > 500 || !io.sockets.sockets.has(player.id)) continue;
+    const map = room.settings.mapId;
+    const index = collisionIndexes.get(map);
+    run.enemies = run.enemies.filter(enemy => enemy.isAlive);
+    if (!run.enemies.length) {
+      run.delay -= .05;
+      if (run.delay <= 0) {
+        if (run.wave === 5) {
+          run.result = 'victory';
+          triggerMatchFinish(room, player);
+          continue;
+        }
+        run.wave++;
+        run.delay = 3;
+        const spawns = MAP_SPAWNS[map];
+        const sorted = [...spawns].sort((a,b) =>
+          Math.hypot(b.x-player.position.x,b.z-player.position.z) - Math.hypot(a.x-player.position.x,a.z-player.position.z));
+        run.enemies = Array.from({length:run.wave+2}, (_,i) => ({
+          id: 'zombie-'+run.wave+'-'+i, name:'Zombie', characterType:'zombie', color:'#659645',
+          position:{...sorted[i%sorted.length]}, rotation:{yaw:0,pitch:0},
+          health:45+run.wave*12, deaths:0, isAlive:true, history:[], attack:0
+        }));
+      }
+    }
+    const now = performance.now();
+    for (const enemy of run.enemies) {
+      const p = enemy.position;
+      const dx = player.position.x-p.x, dz = player.position.z-p.z;
+      const distance = Math.hypot(dx,dz);
+      const heading = Math.atan2(dx,dz);
+      enemy.rotation.yaw = heading;
+      enemy.isMoving = false;
+      const eyeGap = player.position.y-p.y;
+      const attackDistance = Math.hypot(distance,eyeGap);
+      if (attackDistance < 1.65 && index.raycast(p,{x:dx/Math.max(.001,attackDistance),y:eyeGap/Math.max(.001,attackDistance),z:dz/Math.max(.001,attackDistance)},attackDistance) === null) {
+        if (now >= enemy.attack) {
+          enemy.attack = now+950;
+          applyDamageAndCheckKill(room,room.id,enemy,player,8+run.wave,'Claws',false,false,p);
+          if (!player.isAlive) break;
+        }
+      } else {
+        // Try alternate headings near cover and reject ledges or unsupported ground.
+        const step = .05*(2.3+run.wave*.24);
+        for (const offset of [0,.7,-.7,1.4,-1.4]) {
+          const direction = {x:Math.sin(heading+offset),y:0,z:Math.cos(heading+offset)};
+          const torso = {...p,y:p.y-.65};
+          if (index.raycast(torso,direction,step+.34) !== null) continue;
+          const next = {x:p.x+direction.x*step,y:p.y+.35,z:p.z+direction.z*step};
+          const floor = index.raycast(next,{x:0,y:-1,z:0},2.35);
+          if (floor === null || floor < 1.45) continue;
+          next.y += 1.6-floor;
+          enemy.position = next;
+          enemy.isMoving = true;
+          break;
+        }
+      }
+      enemy.history.push({time:now,position:enemy.position});
+      if (enemy.history.length > 8) enemy.history.shift();
+    }
+    if (room.zombies) io.to(room.id).volatile.emit('zombies-state', {
+      wave:run.wave, enemies:run.enemies.map(({history,attack,...enemy})=>enemy)
+    });
+  }
+},50).unref();
+
 server.listen(PORT, '0.0.0.0', () => {
   const lanAddresses = getLanIpAddresses();
   console.log('====================================================');

@@ -14,9 +14,14 @@ test('guard absorbs damage only during its duration and respawn preserves cooldo
   assert.equal(reduceAbilityDamage(p,100,5100),100);resetInventory(p);assert.equal(p.ability.readyAt,22100);assert.equal(p.ability.activeUntil,0);
   const heavy=player('heavy');activateAbility(room(heavy),heavy,100);assert.equal(reduceAbilityDamage(heavy,100,200),60);
 });
-test('recon excludes teammates, distant and dead players and returns frozen positions',()=>{
+test('only Pathfinder reveals the nearest living enemy at unlimited range and returns a frozen position',()=>{
   const p=player('scout'),r=room(p);r.settings.gameMode='tdm';
   const enemy=player('ranger','b');enemy.team='red';const friend=player('ranger','c');const distant=player('ranger','d');distant.team='red';distant.position.x=20;
   r.players={a:p,b:enemy,c:friend,d:distant};const result=activateAbility(r,p,100);assert.equal(result.marks.length,1);
   enemy.position.x=5;assert.equal(result.marks[0].position.x,0);
+  enemy.isAlive=false;distant.position.x=2000;p.ability=null;
+  assert.equal(activateAbility(r,p,30000).marks[0].position.x,2000);
+  distant.isAlive=false;p.ability=null;assert.equal(activateAbility(r,p,60000).marks.length,0);
+  const guard=player('sentinel','e');r.players.e=guard;enemy.isAlive=true;
+  assert.equal(activateAbility(r,guard,100).marks.length,0);
 });

@@ -1,3 +1,6 @@
+import {EXTRA_ARENAS, arenaSpawns} from './arena-catalog.js';
+import {createExtraArena} from './extra-arenas.js';
+import {textureKillhouse} from './killhouse-textures.js';
 import {createKillhouse,KILLHOUSE_SPAWNS,worldTriangles} from './killhouse.js';
 // map.js - Multi-Map Engine for RUNGUN (Warehouse, Sci-Fi Space Station, Desert Outpost, Cyber Arena, Dark Dungeon)
 import * as THREE from 'three';
@@ -107,7 +110,27 @@ export class ArenaMap {
     this.clearMap();
     this.currentMapId = mapId || 'dust2';
 
-    if(this.currentMapId==='killhouse') {
+    const arena = EXTRA_ARENAS[this.currentMapId];
+    if (arena) {
+      this.setKillhouseLighting();
+      this.scene.background.setHex(arena.sky);
+      this.scene.fog.color.setHex(arena.sky);
+      this.scene.fog.near = 75;
+      this.scene.fog.far = 125;
+      const root = createExtraArena(this.currentMapId);
+      this.scene.add(root);
+      this.mapObjects.push(root);
+      root.traverse(mesh => { if (mesh.isMesh) this.shootableMeshes.push(mesh); });
+      this.spawnPoints = arenaSpawns(this.currentMapId).map(p => new THREE.Vector3(p.x,p.y,p.z));
+      this.octree = new Octree().fromGraphNode(root);
+      this.triangleIndex = new TriangleIndex(worldTriangles(root));
+      this.mapBounds = this.octree.bounds.clone();
+      this.perimeterBounds = {
+        minX: -arena.width/2+.5, maxX: arena.width/2-.5,
+        minZ: -arena.depth/2+.5, maxZ: arena.depth/2-.5
+      };
+      this.isMapReady = true;
+    } else if(this.currentMapId==='killhouse') {
       this.loadKillhouse();
     } else if (this.currentMapId === 'dust2' || this.currentMapId === 'dungeon') {
       this.buildDust2();
@@ -511,6 +534,7 @@ export class ArenaMap {
       if (loadToken !== this._loadToken || !validMapIds.includes(this.currentMapId)) { disposeTrees([gltf.scene]); return; }
 
       const model = gltf.scene;
+      if (this.currentMapId === 'killhouse') textureKillhouse(model);
       model.scale.set(scale, scale, scale);
       model.updateMatrixWorld(true);
 

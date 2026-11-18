@@ -53,7 +53,7 @@ export class RemotePlayer {
 
     this.ready = this.initModel();
     this.buildTeamRing();
-    this.buildOverheadUI();
+    if (this.characterType !== 'zombie') this.buildOverheadUI();
 
     this.group.position.set(playerData.position.x, playerData.position.y, playerData.position.z);
     this.scene.add(this.group);
@@ -184,6 +184,12 @@ export class RemotePlayer {
       metalness: 0.8
     });
 
+    if (this.characterType === 'zombie') {
+      bodyMat.color.setHex(0x625247);
+      armorMat.roughness = 1;
+      armorMat.metalness = 0;
+      visorMat.color.setHex(0xe2a04e);
+    }
     const isHeavy = this.characterType === 'heavy';
     const isRobot = this.characterType === 'robot';
 
@@ -288,11 +294,13 @@ export class RemotePlayer {
     this.group.add(this.rightArm);
 
     // Rifle
-    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.8), gunMat);
-    rifle.position.set(0.15, -0.05, 0.45);
-    rifle.castShadow = true;
-    this.group.add(rifle);
-    this.proceduralWeapon = rifle;
+    if (this.characterType !== 'zombie') {
+      const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.8), gunMat);
+      rifle.position.set(0.15, -0.05, 0.45);
+      rifle.castShadow = true;
+      this.group.add(rifle);
+      this.proceduralWeapon = rifle;
+    }
 
     if (['scout','sentinel','ranger'].includes(this.characterType)) {
       const accent=new THREE.MeshStandardMaterial({color:OPERATORS[this.characterType].color,roughness:.6});
@@ -398,7 +406,8 @@ export class RemotePlayer {
     const spriteMat = new THREE.SpriteMaterial({
       map: this.overheadTexture,
       transparent: true,
-      depthTest: false
+      depthTest: true,
+      depthWrite: false
     });
 
     this.overheadSprite = new THREE.Sprite(spriteMat);

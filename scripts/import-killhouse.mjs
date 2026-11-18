@@ -19,12 +19,20 @@ source.traverse(mesh=>{if(!mesh.isMesh)return;let g=mesh.geometry.clone();g.appl
   if(!buckets.has(color))buckets.set(color,[]);buckets.get(color).push(g);outputTriangles+=index.length/3;
 });
 const root=new THREE.Group();for(const [color,geometries]of buckets){root.add(new THREE.Mesh(mergeGeometries(geometries),new THREE.MeshStandardMaterial({color,roughness:.9,side:THREE.DoubleSide})));geometries.forEach(g=>g.dispose());}
-root.rotation.y=Math.PI/2;root.scale.setScalar(.01);root.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(root),center=box.getCenter(new THREE.Vector3());root.position.set(-center.x,-box.min.y,-center.z);root.updateMatrixWorld(true);
+root.rotation.y=Math.PI/2;root.scale.setScalar(.024);root.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(root),center=box.getCenter(new THREE.Vector3());root.position.set(-center.x,-box.min.y,-center.z);root.updateMatrixWorld(true);
 // Bake the transforms so both browser and server use exactly the same meter coordinates.
 for(const mesh of root.children){mesh.geometry.applyMatrix4(mesh.matrixWorld);mesh.position.set(0,0,0);mesh.rotation.set(0,0,0);mesh.scale.setScalar(1);}root.position.set(0,0,0);root.rotation.set(0,0,0);root.scale.setScalar(1);root.updateMatrixWorld(true);
-const collisionRoot=new THREE.Group();collisionRoot.add(...collisionMeshes);collisionRoot.rotation.y=Math.PI/2;collisionRoot.scale.setScalar(.01);collisionRoot.position.set(-center.x,-box.min.y,-center.z);collisionRoot.updateMatrixWorld(true);
+const collisionRoot=new THREE.Group();collisionRoot.add(...collisionMeshes);collisionRoot.rotation.y=Math.PI/2;collisionRoot.scale.setScalar(.024);collisionRoot.position.set(-center.x,-box.min.y,-center.z);collisionRoot.updateMatrixWorld(true);
+// Close the arena with visible walls that also block players, bullets and throws.
+const perimeter=new THREE.Box3().setFromObject(root),span=perimeter.getSize(new THREE.Vector3());
+for(const [w,d,x,z] of [[.5,span.z,perimeter.min.x+.25,0],[.5,span.z,perimeter.max.x-.25,0],[span.x,.5,0,perimeter.min.z+.25],[span.x,.5,0,perimeter.max.z-.25]]) {
+  const geometry=new THREE.BoxGeometry(w,6,d).translate(x,3,z);
+  root.add(new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:0x7d817b,roughness:.95})));
+  collisionRoot.add(new THREE.Mesh(geometry.clone(),new THREE.MeshBasicMaterial()));
+}
+root.updateMatrixWorld(true);collisionRoot.updateMatrixWorld(true);
 const triangles=worldTriangles(collisionRoot),index=new TriangleIndex(triangles),bounds=new THREE.Box3().setFromObject(root);const spawns=[];const clearanceMap=new ArenaMap(new THREE.Scene(),{autoLoad:false});clearanceMap.octree=new Octree().fromGraphNode(collisionRoot);
-for(const side of [-1,1])for(const x of [-6,-3,0,3,6]){const z=side*15;const origin={x,y:3,z},floor=index.raycast(origin,{x:0,y:-1,z:0},5);if(floor===null)throw Error('Missing spawn floor');const ground=3-floor;const overhead=index.raycast({x,y:ground+.55,z},{x:0,y:1,z:0},1.4);if(ground<.5 && overhead===null && clearanceMap.canStandAt({x,y:ground+1.6,z},ground))spawns.push({x,y:ground+1.6,z});}
+for(const side of [-1,1])for(const x of [-14.4,-7.2,0,7.2,14.4]){const z=side*36;const origin={x,y:3,z},floor=index.raycast(origin,{x:0,y:-1,z:0},5);if(floor===null)throw Error('Missing spawn floor');const ground=3-floor;const overhead=index.raycast({x,y:ground+.55,z},{x:0,y:1,z:0},1.4);if(ground<.5 && overhead===null && clearanceMap.canStandAt({x,y:ground+1.6,z},ground))spawns.push({x,y:ground+1.6,z});}
 const glb=await new GLTFExporter().parseAsync(root,{binary:true,onlyVisible:true});fs.mkdirSync('public/assets/models',{recursive:true});fs.writeFileSync('public/assets/models/Killhouse.glb',Buffer.from(glb));fs.writeFileSync('public/assets/collision/killhouse-import.bin',Buffer.from(triangles.buffer));
 fs.writeFileSync('public/assets/models/killhouse-import.json',JSON.stringify({source:'https://www.cgtrader.com/items/3809927',author:'Blenderworks',license:'CGTrader Royalty Free (no AI)',sha256:createHash('sha256').update(bytes).digest('hex'),inputTriangles,outputTriangles,collisionTriangles:triangles.length/9,spawns,bounds:{min:bounds.min,max:bounds.max}},null,2));console.log({inputTriangles,outputTriangles,collisionTriangles:triangles.length/9,glbBytes:glb.byteLength,bounds:bounds.getSize(new THREE.Vector3()).toArray(),spawns});
 
