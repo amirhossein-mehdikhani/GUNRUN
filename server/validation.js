@@ -10,6 +10,7 @@ export function cleanSettings(value = {}) {
   if (!value || typeof value !== 'object') return result;
   if (maps.includes(value.mapId)) result.mapId = value.mapId;
   if (['ffa','tdm','zombies'].includes(value.gameMode)) result.gameMode = value.gameMode;
+  if (['easy','normal','hard'].includes(value.zombieDifficulty)) result.zombieDifficulty = value.zombieDifficulty;
   if (['normal','low','antigravity'].includes(value.gravity)) result.gravity = value.gravity;
   if (Number.isFinite(value.scoreLimit) || (typeof value.scoreLimit === 'string' && /^\d+$/.test(value.scoreLimit))) {
     result.scoreLimit = Math.min(50,Math.max(5,Number(value.scoreLimit)));

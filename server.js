@@ -633,6 +633,7 @@ io.on('connection', (socket) => {
       settings: {
         mapId: chosenMap,
         gameMode: gameMode,
+        zombieDifficulty: settings?.zombieDifficulty || 'normal',
         maxTeamSize: MAX_TEAM_SIZE,
         gravity: settings?.gravity || 'normal',
         scoreLimit: Math.min(Math.max(Number(settings?.scoreLimit) || 15, 5), 50)
@@ -1116,6 +1117,12 @@ function openBrowser(url) {
 }
 
 // Start HTTP and WebSocket server
+const ZOMBIE_DIFFICULTY = {
+  easy: { extra: -1, health: .75, speed: .8, damage: .65 },
+  normal: { extra: 0, health: 1, speed: 1, damage: 1 },
+  hard: { extra: 2, health: 1.35, speed: 1.2, damage: 1.45 }
+};
+
 function resetZombies(room) {
   delete room.zombies;
   if (room.settings.gameMode === 'zombies') {
@@ -1128,6 +1135,7 @@ setInterval(() => {
     const run = room.zombies;
     const player = room.players[room.hostId];
     if (!run || room.status !== 'in-game' || !run.active || !player?.isAlive || performance.now() - (player.lastMove || 0) > 500 || !io.sockets.sockets.has(player.id)) continue;
+    const difficulty = ZOMBIE_DIFFICULTY[room.settings.zombieDifficulty] || ZOMBIE_DIFFICULTY.normal;
     const map = room.settings.mapId;
     const index = collisionIndexes.get(map);
     run.enemies = run.enemies.filter(enemy => enemy.isAlive);
@@ -1144,10 +1152,10 @@ setInterval(() => {
         const spawns = MAP_SPAWNS[map];
         const sorted = [...spawns].sort((a,b) =>
           Math.hypot(b.x-player.position.x,b.z-player.position.z) - Math.hypot(a.x-player.position.x,a.z-player.position.z));
-        run.enemies = Array.from({length:run.wave+2}, (_,i) => ({
+        run.enemies = Array.from({length:run.wave+2+difficulty.extra}, (_,i) => ({
           id: 'zombie-'+run.wave+'-'+i, name:'Zombie', characterType:'zombie', color:'#659645',
           position:{...sorted[i%sorted.length]}, rotation:{yaw:0,pitch:0},
-          health:45+run.wave*12, deaths:0, isAlive:true, history:[], attack:0
+          health:Math.round((45+run.wave*12)*difficulty.health), deaths:0, isAlive:true, history:[], attack:0
         }));
       }
     }
@@ -1164,12 +1172,12 @@ setInterval(() => {
       if (attackDistance < 1.65 && index.raycast(p,{x:dx/Math.max(.001,attackDistance),y:eyeGap/Math.max(.001,attackDistance),z:dz/Math.max(.001,attackDistance)},attackDistance) === null) {
         if (now >= enemy.attack) {
           enemy.attack = now+950;
-          applyDamageAndCheckKill(room,room.id,enemy,player,8+run.wave,'Claws',false,false,p);
+          applyDamageAndCheckKill(room,room.id,enemy,player,Math.round((8+run.wave)*difficulty.damage),'Claws',false,false,p);
           if (!player.isAlive) break;
         }
       } else {
         // Try alternate headings near cover and reject ledges or unsupported ground.
-        const step = .05*(2.3+run.wave*.24);
+        const step = .05*(2.3+run.wave*.24)*difficulty.speed;
         for (const offset of [0,.7,-.7,1.4,-1.4]) {
           const direction = {x:Math.sin(heading+offset),y:0,z:Math.cos(heading+offset)};
           const torso = {...p,y:p.y-.65};

@@ -9,10 +9,26 @@ import { MovementBuffer } from './movement-buffer.js';
 
 const gltfCache = {};
 const modelPromises = new Map();
-const modelPaths = {animations:'AnimationRig.glb',soldier:'Soldier.glb',robot:'RobotExpressive.glb',cyborg:'Xbot.glb',heavy:'TitanMech.glb',scout:'Pathfinder.glb',sentinel:'Sentinel.glb',ranger:'DesertRanger.glb'};
+const zombieSkins = ['zombieMaleA.png', 'zombieFemaleA.png'];
+const modelPaths = {zombie:'KenneyZombie.glb',animations:'AnimationRig.glb',soldier:'Soldier.glb',robot:'RobotExpressive.glb',cyborg:'Xbot.glb',heavy:'TitanMech.glb',scout:'Pathfinder.glb',sentinel:'Sentinel.glb',ranger:'DesertRanger.glb'};
 export function preloadCharacterModel(type) {
   if (!type) return Promise.all(['soldier','robot','cyborg'].map(preloadCharacterModel));
   if (!modelPaths[type]) return Promise.resolve(null);
+  if (type === 'zombie' && !modelPromises.has(type)) {
+    const models = '/assets/models/';
+    const loader = new THREE.TextureLoader();
+    modelPromises.set(type, Promise.all([
+      new GLTFLoader().loadAsync(models + modelPaths.zombie),
+      ...zombieSkins.map(skin => loader.loadAsync(models + skin))
+    ]).then(([gltf, ...skins]) => {
+      for (const texture of skins) texture.colorSpace = THREE.SRGBColorSpace;
+      gltf.zombieSkins = skins;
+      return gltfCache.zombie = gltf;
+    }).catch(error => {
+      console.warn('[CharacterLoader] Zombie model unavailable:', error.message);
+      return null;
+    }));
+  }
   if (!modelPromises.has(type)) modelPromises.set(type,new Promise(resolve=>{
     new GLTFLoader().load('/assets/models/'+modelPaths[type],gltf=>{gltfCache[type]=gltf;resolve(gltf);},undefined,error=>{
       console.warn('[CharacterLoader] Model unavailable:',type,error.message);resolve(null);
@@ -81,7 +97,7 @@ export class RemotePlayer {
     this.borrowedResources = sharedModelResources(gltf.scene);
     const clonedModel = SkeletonUtils.clone(gltf.scene);
 
-    if (['scout','sentinel','ranger','heavy'].includes(this.characterType)) {
+    if (['scout','sentinel','ranger','heavy','zombie'].includes(this.characterType)) {
       fitCharacter(clonedModel);
     } else if (this.characterType === 'robot') {
       clonedModel.scale.set(0.38, 0.38, 0.38);
@@ -101,6 +117,10 @@ export class RemotePlayer {
     // Normalize every imported model, including Xbot (which is already in meter units).
     fitCharacter(clonedModel);
 
+    const zombieIndex = Number(this.id.split('-').at(-1)) || 0;
+    const zombieSkin = gltf.zombieSkins?.[zombieIndex % zombieSkins.length];
+    if (zombieSkin) this.borrowedResources.add(zombieSkin);
+
     // Apply team color accent and shadow flags
     const teamColor = new THREE.Color(this.color);
     clonedModel.traverse((child) => {
@@ -116,6 +136,7 @@ export class RemotePlayer {
             child.material = child.material.map(m => m.clone());
           } else {
             child.material = child.material.clone();
+            if (zombieSkin) child.material.map = zombieSkin;
           }
         }
       }
@@ -134,7 +155,13 @@ export class RemotePlayer {
         const action=this.mixer.clipAction(clip);
         this.animations[clip.name] = action;
         const name=clip.name.split('|').at(-1);
-        if (/^Run(ning)?$/i.test(name)) this.animations.Run=action;
+        if (/^Run(ning)?$/i.test(name)) {
+          this.animations.Run = action;
+          if (zombieSkin) {
+            this.animations.Walk = action;
+            action.timeScale = .8;
+          }
+        }
         if (/^Walk(ing)?$/i.test(name)) this.animations.Walk=action;
         if (/^Idle$/i.test(name)) this.animations.Idle=action;
         if (name==='Idle_Gun_Pointing' || name==='Idle_Neutral') this.animations.Idle=action;

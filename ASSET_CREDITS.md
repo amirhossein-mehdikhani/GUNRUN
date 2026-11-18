@@ -36,3 +36,7 @@ Earlier Soldier, RobotExpressive and Xbot models retain their existing sources; 
 ## Locally downloaded Killhouse
 
 [Killhouse by Blenderworks](https://www.cgtrader.com/free-3d-models/exterior/other/call-of-duty-killhouse-map), downloaded through the user's signed-in account, is installed locally as an optimized map. The source has no textures; the importer assigns game materials. It is marked Royalty Free (no AI), not CC0. The source FBX, GLB, collision and import metadata are deliberately excluded from Git; the rendered thumbnail is included as game UI imagery. The [license](https://help.cgtrader.com/hc/en-us/articles/360015124437-Royalty-Free-License) limits standalone redistribution. These files must not be added to public source archives as freely redistributable assets.
+
+## Zombies
+
+The rig, idle and run animations, and both zombie skins come from [Kenney's Animated Characters 3](https://kenney-assets.itch.io/animated-characters-3), distributed under CC0 1.0. The FBX was converted to `KenneyZombie.glb` for runtime use. Both variants share the rig and animations. RUNGUN ships the original `zombieMaleA.png` and `zombieFemaleA.png` textures.

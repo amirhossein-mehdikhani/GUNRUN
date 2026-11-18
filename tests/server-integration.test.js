@@ -93,9 +93,10 @@ test('solo Zombies rejects guests, starts its first wave on resume, and resets o
   host.emit('leave-room');
   guest.emit('leave-room');
   let pending = event(host, 'room-created');
-  host.emit('create-room', {playerName:'Survivor',settings:{gameMode:'zombies',mapId:'killhouse'}});
+  host.emit('create-room', {playerName:'Survivor',settings:{gameMode:'zombies',mapId:'killhouse',zombieDifficulty:'hard'}});
   const {room} = await pending;
   assert.equal(room.maxPlayers, 1);
+  assert.equal(room.settings.zombieDifficulty, 'hard');
   pending = event(guest, 'join-error');
   guest.emit('join-room', {roomId:room.id,playerName:'Guest'});
   assert.match(await pending, /full/);
@@ -117,7 +118,8 @@ test('solo Zombies rejects guests, starts its first wave on resume, and resets o
   try {
     const state = await wave;
     assert.equal(state.wave, 1);
-    assert.equal(state.enemies.length, 3);
+    assert.equal(state.enemies.length, 5);
+    assert.ok(state.enemies.every(enemy => enemy.health === 77));
     assert.ok(state.enemies.every(enemy => enemy.isAlive && enemy.characterType === 'zombie'));
   } finally {
     clearInterval(movement);

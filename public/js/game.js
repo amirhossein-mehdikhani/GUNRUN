@@ -162,6 +162,7 @@ export class GameApp {
     this.roomNameInput = document.getElementById('room-name');
     this.gameModeSelect = document.getElementById('game-mode-select');
     this.gravitySelect = document.getElementById('gravity-select');
+    this.zombieDifficultySelect = document.getElementById('zombie-difficulty');
     this.scoreLimitSelect = document.getElementById('score-limit-select');
     this.btnCreateRoom = document.getElementById('btn-create-room');
     this.roomsListContainer = document.getElementById('rooms-list');
@@ -676,7 +677,8 @@ export class GameApp {
       roomName: this.roomNameInput,
       mode: this.gameModeSelect,
       gravity: this.gravitySelect,
-      scoreLimit: this.scoreLimitSelect
+      scoreLimit: this.scoreLimitSelect,
+      zombieDifficulty: this.zombieDifficultySelect
     };
     for (const [key, field] of Object.entries(fields)) {
       if (!field) continue;
@@ -687,6 +689,15 @@ export class GameApp {
       if (key === 'nickname' && !field.value.trim()) field.value = 'Soldier_' + Math.floor(100 + Math.random() * 900);
       field.addEventListener(field.options ? 'change' : 'input', () => this.saveProfile(key, field.value));
     }
+    const updateModeFields = () => {
+      const zombies = this.gameModeSelect.value === 'zombies';
+      for (const [field, visible] of [[this.zombieDifficultySelect,zombies],[this.scoreLimitSelect,!zombies]]) {
+        field.hidden = !visible;
+        for (const label of field.labels) label.hidden = !visible;
+      }
+    };
+    updateModeFields();
+    this.gameModeSelect.addEventListener('change', updateModeFields);
     this.saveProfile('nickname', this.nicknameInput.value);
     this.colorOptions.forEach(button => button.classList.toggle('selected', button.dataset.color === this.selectedColor));
 
@@ -807,6 +818,7 @@ export class GameApp {
         settings: {
           mapId: this.selectedMap,
           gameMode,
+          zombieDifficulty: this.zombieDifficultySelect.value,
           gravity,
           scoreLimit
         }
@@ -1536,7 +1548,7 @@ export class GameApp {
     const s = this.currentRoom.settings;
     const mapNames = { switchyard: 'Switchyard', cistern: 'Cistern Works', killhouse: 'Killhouse', dust2: 'Dust II', stalkyard: 'Stalkyard', turbine: 'DM-Turbine', frenzy: 'Frenzy', italy: 'CS Italy', arena: 'CS Italy', warehouse: 'Stalkyard', station: 'DM-Turbine', desert: 'Frenzy' };
     const mName = mapNames[s.mapId] || 'Dust II';
-    const modeLabel = s.gameMode === 'zombies' ? 'ZOMBIES (SOLO)' : s.gameMode === 'tdm' ? '2 TEAMS (MAX 5/TEAM)' : 'FREE-FOR-ALL';
+    const modeLabel = s.gameMode === 'zombies' ? ('ZOMBIES (SOLO) · ' + (s.zombieDifficulty || 'normal').toUpperCase()) : s.gameMode === 'tdm' ? '2 TEAMS (MAX 5/TEAM)' : 'FREE-FOR-ALL';
     this.waitingSettingsSummary.textContent = `Mode: ${modeLabel} | Map: ${mName.toUpperCase()} | Gravity: ${s.gravity.toUpperCase()} | Limit: ${s.scoreLimit} Kills`;
   }
 
